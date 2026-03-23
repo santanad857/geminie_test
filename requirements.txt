@@ -1,3 +1,9 @@
 PyMuPDF
 anthropic
 Pillow
+opencv-python
+numpy
+scipy
+networkx
+shapely
+
