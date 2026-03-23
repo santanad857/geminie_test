@@ -1,4 +1,9 @@
 PyMuPDF
+anthropic
+Pillow
+opencv-python
 numpy
-shapely
+scipy
 networkx
+shapely
+
