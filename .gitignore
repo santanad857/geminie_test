@@ -21,3 +21,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.claude/
+
+# Generated output
+output/

@@ -11,7 +11,7 @@ Outputs:
 """
 
 import sys
-from wall_extractor import (
+from pipelines.wall_extractor import (
     extract_walls,
     render_overlay,
     min_bounding_thickness,
@@ -21,7 +21,7 @@ from wall_extractor import (
 
 
 def main():
-    pdf_path = sys.argv[1] if len(sys.argv) > 1 else "./352 AA copy 2.pdf"
+    pdf_path = sys.argv[1] if len(sys.argv) > 1 else "./data/352 AA copy 2.pdf"
     page_num = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 
     walls = extract_walls(pdf_path, page_num)

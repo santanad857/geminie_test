@@ -4,7 +4,7 @@ Vector Ray-Casting Room Detection Pipeline
 ===========================================
 
 Deterministic, vector-based pipeline that:
-1. Extracts orthogonal wall border segments from the PDF via wall_pipeline.
+1. Loads orthogonal wall vectors (from file or wall_pipeline API).
 2. Identifies exposed (degree-1) endpoints — the doorjambs.
 3. Casts bounded rays from each jamb to seal doorway openings.
 4. Assembles closed polygons via graph cycle detection.
@@ -13,19 +13,21 @@ Deterministic, vector-based pipeline that:
 Usage::
 
     python room_pipeline.py --pdf plan.pdf [--scale 96] [--max-door-ft 20]
+                           [--wall-vectors vectors.json]
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import inspect
 import json
 import math
 import os
 import re
 import sys
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Optional
 
 import anthropic
 import cv2
@@ -38,7 +40,7 @@ from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union
 
-import wall_pipeline
+from pipelines import wall_pipeline
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -210,6 +212,358 @@ def _merge_colinear_segments(
     return merged
 
 
+def _parse_point(value: Any) -> Optional[tuple[float, float]]:
+    """Parse a point from common JSON-ish shapes."""
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        return (float(value[0]), float(value[1]))
+    if isinstance(value, dict):
+        if "x" in value and "y" in value:
+            return (float(value["x"]), float(value["y"]))
+        if "x1" in value and "y1" in value:
+            return (float(value["x1"]), float(value["y1"]))
+    return None
+
+
+def _looks_like_segment_dict(record: dict[str, Any]) -> bool:
+    """Heuristic: does this dict directly encode one segment?"""
+    if ("p1" in record and "p2" in record):
+        return True
+    if ("start" in record and "end" in record):
+        return True
+    if ("a" in record and "b" in record):
+        return True
+    return all(k in record for k in ("x1", "y1", "x2", "y2"))
+
+
+def _segment_from_record(
+    record: Any,
+    *,
+    source: str = "border",
+    ortho_tol_deg: float = 5.0,
+) -> Optional[WallSegment]:
+    """Convert one record into a normalized orthogonal WallSegment."""
+    p1: Optional[tuple[float, float]] = None
+    p2: Optional[tuple[float, float]] = None
+
+    if isinstance(record, WallSegment):
+        p1, p2 = record.p1, record.p2
+
+    elif isinstance(record, dict):
+        if "p1" in record and "p2" in record:
+            p1 = _parse_point(record["p1"])
+            p2 = _parse_point(record["p2"])
+        elif "start" in record and "end" in record:
+            p1 = _parse_point(record["start"])
+            p2 = _parse_point(record["end"])
+        elif "a" in record and "b" in record:
+            p1 = _parse_point(record["a"])
+            p2 = _parse_point(record["b"])
+        elif all(k in record for k in ("x1", "y1", "x2", "y2")):
+            p1 = (float(record["x1"]), float(record["y1"]))
+            p2 = (float(record["x2"]), float(record["y2"]))
+
+    elif isinstance(record, (list, tuple)):
+        if len(record) == 4:
+            p1 = (float(record[0]), float(record[1]))
+            p2 = (float(record[2]), float(record[3]))
+        elif len(record) == 2:
+            p1 = _parse_point(record[0])
+            p2 = _parse_point(record[1])
+
+    if p1 is None or p2 is None:
+        return None
+
+    x1, y1 = p1
+    x2, y2 = p2
+    dx, dy = x2 - x1, y2 - y1
+    length = math.hypot(dx, dy)
+    if length < 0.5:
+        return None
+
+    angle = math.degrees(math.atan2(abs(dy), abs(dx)))
+    if angle > ortho_tol_deg and angle < (90.0 - ortho_tol_deg):
+        return None
+    if angle <= ortho_tol_deg:
+        y2 = y1
+    else:
+        x2 = x1
+
+    return WallSegment(p1=(x1, y1), p2=(x2, y2), source=source)
+
+
+def _coerce_segment_list(
+    payload: Any,
+    *,
+    source_name: str,
+    source_tag: str = "border",
+    ortho_tol_deg: float = 5.0,
+) -> list[WallSegment]:
+    """Parse a payload into normalized orthogonal wall segments."""
+    if payload is None:
+        return []
+
+    if isinstance(payload, dict) and _looks_like_segment_dict(payload):
+        records = [payload]
+    elif isinstance(payload, (list, tuple)):
+        records = list(payload)
+    elif isinstance(payload, dict):
+        # Fallback for map-like payloads keyed by IDs.
+        records = list(payload.values())
+    else:
+        raise ValueError(f"Unsupported wall-vector payload type in {source_name}: {type(payload)}")
+
+    parsed: list[WallSegment] = []
+    skipped = 0
+    for rec in records:
+        seg = _segment_from_record(
+            rec, source=source_tag, ortho_tol_deg=ortho_tol_deg)
+        if seg is None:
+            skipped += 1
+            continue
+        parsed.append(seg)
+
+    if skipped:
+        print(f"  {source_name}: skipped {skipped} non-orthogonal/invalid vectors")
+    return parsed
+
+
+def _extract_center_and_raw_payloads(payload: Any) -> tuple[Any, Any]:
+    """Extract optional centerline/raw payloads from a flexible wall-vector schema."""
+    if not isinstance(payload, dict) or _looks_like_segment_dict(payload):
+        return payload, None
+
+    center_keys = (
+        "centerlines",
+        "centerline_segments",
+        "centerline_vectors",
+        "segments",
+        "vectors",
+        "wall_vectors",
+        "walls",
+    )
+    raw_keys = (
+        "raw_segments",
+        "raw_vectors",
+        "border_segments",
+        "wall_borders",
+    )
+
+    center_payload = None
+    raw_payload = None
+    for key in center_keys:
+        if key in payload:
+            center_payload = payload[key]
+            break
+    for key in raw_keys:
+        if key in payload:
+            raw_payload = payload[key]
+            break
+
+    # Common wrappers.
+    if center_payload is None and raw_payload is None:
+        for wrapper_key in ("data", "result", "output"):
+            if wrapper_key in payload:
+                return _extract_center_and_raw_payloads(payload[wrapper_key])
+
+    if center_payload is None and raw_payload is None:
+        vals = list(payload.values())
+        if vals and all(
+            isinstance(v, WallSegment)
+            or (isinstance(v, dict) and _looks_like_segment_dict(v))
+            or (isinstance(v, (list, tuple)))
+            for v in vals
+        ):
+            return vals, None
+
+    # If only raw is present, use it as base payload.
+    if center_payload is None and raw_payload is not None:
+        return raw_payload, raw_payload
+
+    return center_payload, raw_payload
+
+
+def _estimate_border_pair_ratio(
+    segments: list[WallSegment],
+    max_wall_thickness: float = 5.0,
+) -> float:
+    """Estimate how many segments appear in parallel wall-border pairs."""
+    h: list[tuple[float, float, float]] = []
+    v: list[tuple[float, float, float]] = []
+    for seg in segments:
+        dx = abs(seg.p2[0] - seg.p1[0])
+        dy = abs(seg.p2[1] - seg.p1[1])
+        if dy < 0.5 and dx > 0.5:
+            y = (seg.p1[1] + seg.p2[1]) / 2
+            h.append((y, min(seg.p1[0], seg.p2[0]), max(seg.p1[0], seg.p2[0])))
+        elif dx < 0.5 and dy > 0.5:
+            x = (seg.p1[0] + seg.p2[0]) / 2
+            v.append((x, min(seg.p1[1], seg.p2[1]), max(seg.p1[1], seg.p2[1])))
+
+    def _count_pairable(axis_segments: list[tuple[float, float, float]]) -> int:
+        axis_segments.sort(key=lambda row: row[0])
+        pairable: set[int] = set()
+        for i, (coord_i, lo_i, hi_i) in enumerate(axis_segments):
+            best_j = None
+            best_overlap = 0.0
+            len_i = hi_i - lo_i
+            if len_i <= 0.5:
+                continue
+            for j in range(i + 1, len(axis_segments)):
+                coord_j, lo_j, hi_j = axis_segments[j]
+                if coord_j - coord_i > max_wall_thickness:
+                    break
+                overlap = min(hi_i, hi_j) - max(lo_i, lo_j)
+                if overlap <= 0:
+                    continue
+                len_j = hi_j - lo_j
+                if overlap < min(len_i, len_j) * 0.5:
+                    continue
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_j = j
+            if best_j is not None:
+                pairable.add(i)
+                pairable.add(best_j)
+        return len(pairable)
+
+    pairable = _count_pairable(h) + _count_pairable(v)
+    return pairable / max(len(segments), 1)
+
+
+def _prepare_segments_from_wall_vectors(
+    payload: Any,
+    *,
+    wall_vector_mode: str = "auto",
+    ortho_tol_deg: float = 5.0,
+) -> tuple[list[WallSegment], list[WallSegment], str]:
+    """Build (centerline_segments, raw_segments, resolved_mode) from payload."""
+    center_payload, raw_payload = _extract_center_and_raw_payloads(payload)
+    center = _coerce_segment_list(
+        center_payload,
+        source_name="centerline vectors",
+        source_tag="border",
+        ortho_tol_deg=ortho_tol_deg,
+    )
+    raw = _coerce_segment_list(
+        raw_payload,
+        source_name="raw vectors",
+        source_tag="border",
+        ortho_tol_deg=ortho_tol_deg,
+    )
+
+    if not center and not raw:
+        raise ValueError("Wall vector payload did not contain any usable segments.")
+
+    # If only one representation was supplied, use it for both then resolve mode.
+    if not raw:
+        raw = list(center)
+    if not center:
+        center = list(raw)
+
+    raw = _merge_colinear_segments(raw, tol=1.5)
+    center = _merge_colinear_segments(center, tol=1.5)
+
+    mode = wall_vector_mode.lower().strip()
+    if mode not in {"auto", "centerline", "border"}:
+        raise ValueError("wall_vector_mode must be one of: auto, centerline, border")
+
+    resolved_mode = mode
+    if mode == "auto":
+        if raw_payload is not None and center_payload is not None and raw_payload is not center_payload:
+            resolved_mode = "centerline"  # explicit centerlines provided
+            print("  Wall-vector mode auto -> centerline (explicit centerline payload)")
+        else:
+            pair_ratio = _estimate_border_pair_ratio(raw, max_wall_thickness=5.0)
+            resolved_mode = "border" if pair_ratio >= 0.30 else "centerline"
+            print(f"  Wall-vector mode auto -> {resolved_mode} (pair ratio={pair_ratio:.2f})")
+
+    if resolved_mode == "border":
+        center = _collapse_to_centerlines(raw, max_wall_thickness=5.0)
+        center = _merge_colinear_segments(center, tol=3.0)
+    else:
+        center = _merge_colinear_segments(center, tol=3.0)
+
+    return center, raw, resolved_mode
+
+
+def _call_wall_vector_api(
+    extract_fn: Any,
+    pdf_path: str,
+    page_index: int,
+) -> Any:
+    """Call a future wall_pipeline vector API with flexible signatures."""
+    try:
+        sig = inspect.signature(extract_fn)
+    except (TypeError, ValueError):
+        return extract_fn(pdf_path, page_index)
+
+    params = sig.parameters
+    kwargs: dict[str, Any] = {}
+    if "pdf_path" in params:
+        kwargs["pdf_path"] = pdf_path
+    if "page_index" in params:
+        kwargs["page_index"] = page_index
+    elif "page_num" in params:
+        kwargs["page_num"] = page_index
+
+    if kwargs:
+        return extract_fn(**kwargs)
+
+    # Positional fallback.
+    positional = [
+        p for p in params.values()
+        if p.kind in (inspect.Parameter.POSITIONAL_ONLY,
+                      inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    if len(positional) >= 2:
+        return extract_fn(pdf_path, page_index)
+    return extract_fn(pdf_path)
+
+
+def extract_wall_segments_for_room_pipeline(
+    pdf_path: str,
+    *,
+    page_index: int = 0,
+    wall_vectors_path: Optional[str] = None,
+    wall_vector_mode: str = "auto",
+    force_legacy_wall_pipeline: bool = False,
+    ortho_tol_deg: float = 5.0,
+) -> tuple[list[WallSegment], list[WallSegment], str]:
+    """Resolve wall segments for room detection from best available source.
+
+    Priority:
+      1) explicit wall-vector JSON file
+      2) wall_pipeline.extract_wall_vectors(...) if available
+      3) legacy wall_pipeline VLM+fingerprint extraction
+    """
+    if wall_vectors_path:
+        with open(wall_vectors_path) as fh:
+            payload = json.load(fh)
+        center, raw, resolved_mode = _prepare_segments_from_wall_vectors(
+            payload, wall_vector_mode=wall_vector_mode, ortho_tol_deg=ortho_tol_deg)
+        source = f"wall-vector file ({os.path.basename(wall_vectors_path)}) [{resolved_mode}]"
+        print(f"  Wall source: {source}")
+        print(f"  Centerlines: {len(center)} | Raw segments: {len(raw)}")
+        return center, raw, source
+
+    if not force_legacy_wall_pipeline:
+        vector_api = getattr(wall_pipeline, "extract_wall_vectors", None)
+        if callable(vector_api):
+            payload = _call_wall_vector_api(vector_api, pdf_path, page_index)
+            center, raw, resolved_mode = _prepare_segments_from_wall_vectors(
+                payload, wall_vector_mode=wall_vector_mode, ortho_tol_deg=ortho_tol_deg)
+            source = f"wall_pipeline.extract_wall_vectors [{resolved_mode}]"
+            print(f"  Wall source: {source}")
+            print(f"  Centerlines: {len(center)} | Raw segments: {len(raw)}")
+            return center, raw, source
+
+    center, raw = extract_walls_via_wall_pipeline(
+        pdf_path, page_index=page_index, ortho_tol_deg=ortho_tol_deg)
+    source = "legacy wall_pipeline fingerprint"
+    print(f"  Wall source: {source}")
+    return center, raw, source
+
+
 def extract_wall_segments(
     pdf_path: str,
     page_index: int = 0,
@@ -301,30 +655,39 @@ def extract_walls_via_wall_pipeline(
     pdf_path: str,
     page_index: int = 0,
     ortho_tol_deg: float = 5.0,
-) -> list[WallSegment]:
-    """Extract wall border segments using wall_pipeline's VLM-guided
-    fingerprinting, then convert to orthogonal WallSegment objects.
+) -> tuple[list[WallSegment], list[WallSegment]]:
+    """Extract wall segments using wall_pipeline's VLM-guided fingerprinting.
 
-    This leverages wall_pipeline's accurate hatch+border detection to
-    avoid picking up dimension lines and other non-wall geometry.
+    Handles all wall styles: hatched, solid_fill, and stroke-based.
+    Returns (centerlines, merged_all) for graph and raster paths.
     """
     doc = fitz.open(pdf_path)
     page = doc[page_index]
     drawings = page.get_drawings()
 
-    # ── VLM seed + fingerprint (with retry, same as wall_pipeline.main) ──
+    # ── VLM seed + fingerprint ───────────────────────────────────────
     MAX_VLM_ATTEMPTS = 3
     fp = None
     for attempt in range(1, MAX_VLM_ATTEMPTS + 1):
         print(f"  VLM wall seed attempt {attempt}/{MAX_VLM_ATTEMPTS} …")
         try:
-            seed_rect = wall_pipeline.vlm_identify_wall(page, dpi=150)
-            print(f"  Seed rect (PDF pts): {seed_rect}")
-            fp = wall_pipeline.extract_fingerprint(drawings, seed_rect)
-            print(f"  Hatch colour : {tuple(round(c, 4) for c in fp['hatch_color'])}")
-            print(f"  Hatch angle  : {fp['hatch_angle']}°")
-            print(f"  Border widths: {fp['border_widths']}")
-            break
+            seeds = wall_pipeline.vlm_identify_wall(page, dpi=150)
+            # Derotate seeds from page.rect to mediabox coordinates.
+            derot = page.derotation_matrix
+            seeds = [(rect * derot, hints) for rect, hints in seeds]
+
+            # Try each seed until one yields a valid fingerprint.
+            for si, (seed_rect, vlm_hints) in enumerate(seeds):
+                try:
+                    print(f"  Seed {si+1}/{len(seeds)}: {seed_rect}")
+                    fp = wall_pipeline.extract_fingerprint(
+                        drawings, seed_rect, vlm_hints)
+                    print(f"  Wall style: {fp['wall_style']}")
+                    break
+                except ValueError:
+                    continue
+            if fp is not None:
+                break
         except ValueError as e:
             print(f"  {e}")
             if attempt == MAX_VLM_ATTEMPTS:
@@ -332,19 +695,19 @@ def extract_walls_via_wall_pipeline(
                     f"Could not extract wall fingerprint after {MAX_VLM_ATTEMPTS} attempts."
                 )
 
-    # ── Global match ─────────────────────────────────────────────────────
-    hatches, borders = wall_pipeline.find_all_walls(drawings, fp)
-    print(f"  Matched hatches: {len(hatches)}, borders: {len(borders)}")
+    # ── Global match ─────────────────────────────────────────────────
+    wall_result = wall_pipeline.find_all_walls(drawings, fp)
+    edges = wall_result["edges"]
+    hatches = wall_result["hatches"]
+    fills = wall_result["fills"]
+    print(f"  Matched edges: {len(edges)}, hatches: {len(hatches)}, "
+          f"fills: {len(fills)}")
     doc.close()
 
-    # ── Extract segments from ALL wall_pipeline drawings ─────────────
-    # Use every vector that wall_pipeline identified as a wall: both
-    # hatches and borders.  Extract orthogonal line segments from their
-    # drawing items, plus edges from hatch bounding rects.
+    # ── Extract segments from ALL wall drawings ──────────────────────
     raw_segments: list[WallSegment] = []
+    all_wall_drawings = list(edges) + list(hatches) + list(fills)
 
-    # Line segments from all matched drawings (hatches + borders).
-    all_wall_drawings = list(hatches) + list(borders)
     for _, d in all_wall_drawings:
         for item in d["items"]:
             if item[0] == "l":
@@ -369,10 +732,20 @@ def extract_walls_via_wall_pipeline(
                 raw_segments.append(WallSegment(p1=(r.x1, r.y1), p2=(r.x0, r.y1)))
                 raw_segments.append(WallSegment(p1=(r.x0, r.y1), p2=(r.x0, r.y0)))
 
-    print(f"  Orthogonal segments from wall drawings: {len(raw_segments)}")
+    # For fill-based walls, also extract edges from bounding rects.
+    # Fill rects ARE the wall geometry (solid black rectangles).
+    for _, d in fills:
+        r = d["rect"]
+        rw = r.x1 - r.x0
+        rh = r.y1 - r.y0
+        if rw < 1.0 or rh < 1.0:
+            continue
+        raw_segments.append(WallSegment(p1=(r.x0, r.y0), p2=(r.x1, r.y0)))
+        raw_segments.append(WallSegment(p1=(r.x1, r.y0), p2=(r.x1, r.y1)))
+        raw_segments.append(WallSegment(p1=(r.x1, r.y1), p2=(r.x0, r.y1)))
+        raw_segments.append(WallSegment(p1=(r.x0, r.y1), p2=(r.x0, r.y0)))
 
-    # Hatch bounding rect edges — infer wall faces from hatch extent.
-    hatch_edge_segs: list[WallSegment] = []
+    # For hatch-based walls, extract edges from hatch bounding rects.
     for _, d in hatches:
         r = d["rect"]
         rw = r.x1 - r.x0
@@ -380,33 +753,26 @@ def extract_walls_via_wall_pipeline(
         if rw < 1.0 or rh < 1.0:
             continue
         if rw > rh * 2:
-            hatch_edge_segs.append(WallSegment(p1=(r.x0, r.y0), p2=(r.x1, r.y0)))
-            hatch_edge_segs.append(WallSegment(p1=(r.x0, r.y1), p2=(r.x1, r.y1)))
+            raw_segments.append(WallSegment(p1=(r.x0, r.y0), p2=(r.x1, r.y0)))
+            raw_segments.append(WallSegment(p1=(r.x0, r.y1), p2=(r.x1, r.y1)))
         elif rh > rw * 2:
-            hatch_edge_segs.append(WallSegment(p1=(r.x0, r.y0), p2=(r.x0, r.y1)))
-            hatch_edge_segs.append(WallSegment(p1=(r.x1, r.y0), p2=(r.x1, r.y1)))
+            raw_segments.append(WallSegment(p1=(r.x0, r.y0), p2=(r.x0, r.y1)))
+            raw_segments.append(WallSegment(p1=(r.x1, r.y0), p2=(r.x1, r.y1)))
         else:
-            hatch_edge_segs.append(WallSegment(p1=(r.x0, r.y0), p2=(r.x1, r.y0)))
-            hatch_edge_segs.append(WallSegment(p1=(r.x1, r.y0), p2=(r.x1, r.y1)))
-            hatch_edge_segs.append(WallSegment(p1=(r.x1, r.y1), p2=(r.x0, r.y1)))
-            hatch_edge_segs.append(WallSegment(p1=(r.x0, r.y1), p2=(r.x0, r.y0)))
+            raw_segments.append(WallSegment(p1=(r.x0, r.y0), p2=(r.x1, r.y0)))
+            raw_segments.append(WallSegment(p1=(r.x1, r.y0), p2=(r.x1, r.y1)))
+            raw_segments.append(WallSegment(p1=(r.x1, r.y1), p2=(r.x0, r.y1)))
+            raw_segments.append(WallSegment(p1=(r.x0, r.y1), p2=(r.x0, r.y0)))
 
-    print(f"  Hatch rect edge segments: {len(hatch_edge_segs)}")
-    print(f"  Total raw segments (borders only): {len(raw_segments)}")
+    print(f"  Total raw segments: {len(raw_segments)}")
 
-    # Graph path: borders only (precise junction connectivity).
-    merged_borders = _merge_colinear_segments(raw_segments, tol=1.5)
-    print(f"  Borders after co-linear merge: {len(merged_borders)}")
-    centerlines = _collapse_to_centerlines(merged_borders, max_wall_thickness=5.0)
+    merged = _merge_colinear_segments(raw_segments, tol=1.5)
+    print(f"  After co-linear merge: {len(merged)}")
+    centerlines = _collapse_to_centerlines(merged, max_wall_thickness=5.0)
     centerlines = _merge_colinear_segments(centerlines, tol=3.0)
     print(f"  Centerlines (for graph): {len(centerlines)}")
 
-    # Raster path: borders + hatch edges (maximum wall coverage).
-    all_raw = raw_segments + hatch_edge_segs
-    merged_all = _merge_colinear_segments(all_raw, tol=1.5)
-    print(f"  All merged (for raster fallback): {len(merged_all)}")
-
-    return centerlines, merged_all
+    return centerlines, merged
 
 
 def _collapse_to_centerlines(
@@ -792,6 +1158,8 @@ def _centroid(verts: list[tuple[float, float]]) -> tuple[float, float]:
     return (cx, cy)
 
 
+
+
 def _weld_endpoints(
     segments: list[WallSegment],
     weld_radius: float = 4.0,
@@ -1145,6 +1513,7 @@ def _fallback_raster_polygons(
     y_min, y_max = min(ys), max(ys)
 
     scale = render_dpi / 72.0
+    sqpt_to_sqft = (scale_ratio / 72.0) ** 2 / 144.0
     pad = int(40 * scale) + 10
     w = int((x_max - x_min) * scale) + 2 * pad
     h = int((y_max - y_min) * scale) + 2 * pad
@@ -1193,33 +1562,28 @@ def _fallback_raster_polygons(
         cv2.polylines(canvas, [fp_pixels], isClosed=True, color=255, thickness=line_thickness)
     cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), 255, 2)
 
+    cv2.imwrite("output/raster_debug.png", canvas)
+
     cv2.imwrite("raster_debug.png", canvas)
 
     # ── Seal exterior with thick footprint boundary + flood-fill ────
-    # Draw the footprint boundary as a very thick wall to guarantee
-    # no gaps for the flood-fill to leak through.
     if footprint is not None:
         cv2.polylines(canvas, [fp_pixels], isClosed=True, color=255,
                       thickness=line_thickness * 3)
     cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), 255, 3)
 
-    cv2.imwrite("raster_debug.png", canvas)
-
     # Flood-fill from corner — marks all exterior as 128.
     flood = canvas.copy()
-    flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
-    cv2.floodFill(flood, flood_mask, (1, 1), 128)
+    flood_fm = np.zeros((h + 2, w + 2), dtype=np.uint8)
+    cv2.floodFill(flood, flood_fm, (1, 1), 128)
 
     # Rooms = pixels still 0 (not wall=255, not exterior=128).
     rooms_mask = np.zeros_like(canvas)
     rooms_mask[flood == 0] = 255
 
-    # Clip to tightly eroded footprint — the footprint buffer extends
-    # ~27 pt beyond walls, creating a perimeter band that connects all
-    # rooms.  Erode by the buffer distance to bring it inside the outer
-    # wall faces.
+    # Clip to tightly eroded footprint.
     if footprint is not None:
-        buffer_px = int(3.0 * 12.0 / scale_ratio * 72.0 * scale)  # match footprint buffer
+        buffer_px = int(3.0 * 12.0 / scale_ratio * 72.0 * scale)
         k_fp_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
                                                 (buffer_px, buffer_px))
         fp_tight = cv2.erode(footprint_mask, k_fp_erode)
@@ -1233,7 +1597,7 @@ def _fallback_raster_polygons(
                                         (open_radius, open_radius))
     rooms_mask = cv2.morphologyEx(rooms_mask, cv2.MORPH_OPEN, k_open)
 
-    cv2.imwrite("raster_flood_debug.png", rooms_mask)
+    cv2.imwrite("output/raster_flood_debug.png", rooms_mask)
 
     contours, _ = cv2.findContours(rooms_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -1400,7 +1764,7 @@ def overlay_rooms_on_pdf(
     pdf_path: str,
     rooms: list[RoomPolygon],
     door_segs: list[WallSegment],
-    output_path: str = "room_overlay.pdf",
+    output_path: str = "output/room_overlay.pdf",
     page_index: int = 0,
     fill_opacity: float = 0.30,
 ) -> str:
@@ -1449,7 +1813,7 @@ def render_debug_image(
     door_segments: list[WallSegment],
     exposed: list[ExposedEndpoint],
     rooms: list[RoomPolygon],
-    output_path: str = "room_debug.png",
+    output_path: str = "output/room_debug.png",
     page_index: int = 0,
     dpi: int = 150,
 ) -> str:
@@ -1498,7 +1862,7 @@ def render_ray_debug(
     exposed: list[ExposedEndpoint],
     footprint: Optional[ShapelyPolygon],
     page_index: int = 0,
-    output_path: str = "ray_debug.png",
+    output_path: str = "output/ray_debug.png",
     dpi: int = 150,
 ) -> str:
     """Render the PDF page with wall segments, exposed endpoints, ray
@@ -1568,7 +1932,7 @@ def render_ray_debug(
 
 
 def load_env() -> None:
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
     if not os.path.exists(env_path):
         return
     with open(env_path) as fh:
@@ -1597,8 +1961,11 @@ def run_pipeline(
     scale_ratio: float = 96.0,
     epsilon: float = 3.0,
     max_door_ft: float = 20.0,
-    output_pdf: str = "room_overlay.pdf",
-    output_debug: str = "room_debug.png",
+    wall_vectors_path: Optional[str] = None,
+    wall_vector_mode: str = "auto",
+    force_legacy_wall_pipeline: bool = False,
+    output_pdf: str = "output/room_overlay.pdf",
+    output_debug: str = "output/room_debug.png",
     page_index: int = 0,
 ) -> list[RoomPolygon]:
     """Execute the full vector ray-casting room detection pipeline."""
@@ -1610,9 +1977,16 @@ def run_pipeline(
     max_dw = compute_max_door_width(scale_ratio, max_door_ft)
     print(f"  Scale      : {scale_ratio}  (max door = {max_dw:.1f} pt ≈ {max_door_ft} ft)")
 
-    # ── Step 0: Wall segments (via wall_pipeline fingerprinting) ────
-    print("\n[0/5] Extracting wall border segments via wall_pipeline …")
-    segments, raw_segments = extract_walls_via_wall_pipeline(pdf_path, page_index)
+    # ── Step 0: Wall segments (wall vectors preferred) ───────────────
+    print("\n[0/5] Loading wall vectors …")
+    segments, raw_segments, wall_source = extract_wall_segments_for_room_pipeline(
+        pdf_path,
+        page_index=page_index,
+        wall_vectors_path=wall_vectors_path,
+        wall_vector_mode=wall_vector_mode,
+        force_legacy_wall_pipeline=force_legacy_wall_pipeline,
+    )
+    print(f"  Using: {wall_source}")
 
     # ── Step 1: Exposed endpoints ────────────────────────────────────
     print("\n[1/5] Finding exposed endpoints (doorjambs) …")
@@ -1664,8 +2038,8 @@ def run_pipeline(
                        output_debug, page_index)
     print(f"  Debug → {output_debug}")
     render_ray_debug(pdf_path, raw_segments, door_segs, exposed, footprint,
-                     page_index, "ray_debug.png")
-    print(f"  Rays  → ray_debug.png")
+                     page_index, "output/ray_debug.png")
+    print(f"  Rays  → output/ray_debug.png")
 
     # ── Summary ──────────────────────────────────────────────────────
     print()
@@ -1692,15 +2066,22 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description="Vector ray-casting room detection for floor plans.",
     )
-    ap.add_argument("--pdf", default="./352 AA copy 2.pdf")
+    ap.add_argument("--pdf", default="./data/352 AA copy 2.pdf")
     ap.add_argument("--scale", type=float, default=96.0,
                     help='Scale ratio (96 = 1/8"=1\'-0").')
     ap.add_argument("--epsilon", type=float, default=3.0,
                     help="Endpoint clustering tolerance in PDF pts.")
     ap.add_argument("--max-door-ft", type=float, default=20.0,
                     help="Max doorway width in real feet.")
-    ap.add_argument("--output-pdf", default="room_overlay.pdf")
-    ap.add_argument("--output-debug", default="room_debug.png")
+    ap.add_argument("--wall-vectors", default=None,
+                    help="Path to JSON wall vectors (preferred input).")
+    ap.add_argument("--wall-vector-mode", choices=("auto", "centerline", "border"),
+                    default="auto",
+                    help="Interpretation mode for wall vectors.")
+    ap.add_argument("--force-legacy-wall-pipeline", action="store_true",
+                    help="Bypass vector API/file and use legacy VLM wall extraction.")
+    ap.add_argument("--output-pdf", default="output/room_overlay.pdf")
+    ap.add_argument("--output-debug", default="output/room_debug.png")
 
     args = ap.parse_args()
     load_env()
@@ -1710,6 +2091,9 @@ def main() -> int:
         scale_ratio=args.scale,
         epsilon=args.epsilon,
         max_door_ft=args.max_door_ft,
+        wall_vectors_path=args.wall_vectors,
+        wall_vector_mode=args.wall_vector_mode,
+        force_legacy_wall_pipeline=args.force_legacy_wall_pipeline,
         output_pdf=args.output_pdf,
         output_debug=args.output_debug,
     )
