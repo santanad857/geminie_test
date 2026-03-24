@@ -113,11 +113,15 @@ def vlm_identify_wall(page, dpi=150):
 
     print(f"  VLM pixel bbox: ({bbox['x1']}, {bbox['y1']}) -> ({bbox['x2']}, {bbox['y2']})")
 
-    # Pixel -> PDF points (simple DPI scaling; no rotation transform needed
-    # because PyMuPDF's default render and get_drawings() share the same
-    # unrotated coordinate space).
+    # Pixel → rotated page-point coordinates, then derotate to mediabox
+    # coordinates (which get_drawings() uses).  get_pixmap() renders the
+    # rotated page, so VLM pixel coords are in page.rect space.
+    # get_drawings() returns mediabox coordinates.  We must derotate.
     s = 72.0 / dpi
-    return fitz.Rect(bbox["x1"] * s, bbox["y1"] * s, bbox["x2"] * s, bbox["y2"] * s)
+    rotated_rect = fitz.Rect(bbox["x1"] * s, bbox["y1"] * s,
+                             bbox["x2"] * s, bbox["y2"] * s)
+    derot = page.derotation_matrix
+    return rotated_rect * derot
 
 
 # ---------------------------------------------------------------------------
