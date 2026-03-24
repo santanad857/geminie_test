@@ -38,8 +38,8 @@ import fitz  # PyMuPDF
 # ---------------------------------------------------------------------------
 
 def load_env():
-    """Load key=value pairs from .env in the project root."""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
+    """Load key=value pairs from .env beside this script."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if os.path.exists(env_path):
         with open(env_path) as f:
             for line in f:
@@ -561,7 +561,7 @@ def save_debug_vlm_seed(pdf_path, seeds, dpi=150,
 # ---------------------------------------------------------------------------
 
 def _is_wall_shaped(rect, min_thickness=1.5, max_thickness=25, min_length=6,
-                     min_aspect=1.3):
+                     min_aspect=1.0):
     """True if *rect* has wall-like proportions (long and thin)."""
     narrow = min(rect.width, rect.height)
     wide = max(rect.width, rect.height)
@@ -572,6 +572,30 @@ def _is_wall_shaped(rect, min_thickness=1.5, max_thickness=25, min_length=6,
     if wide / max(narrow, 0.1) < min_aspect:
         return False
     return True
+
+
+def _is_wall_fill(drawing):
+    """True if *drawing* is structurally a wall fill (not an arrow/symbol).
+
+    Wall fills are rectangles (``re``/``qu`` items) or closed polygonal
+    paths (4+ line items).  Arrow fills are triangular (exactly 3 ``l``
+    items).  This check prevents arrowheads from entering the wall
+    candidate set.
+    """
+    # Large fills are always wall candidates regardless of shape
+    r = drawing["rect"]
+    if max(r.width, r.height) >= 20:
+        return True
+    # Small fills: accept rectangles, quads, or 4+ segment closed paths
+    items = drawing["items"]
+    for item in items:
+        if item[0] in ("re", "qu"):
+            return True
+    # 4+ line segments = rectangular/polygonal wall junction
+    # 3 line segments = triangular arrow
+    if len(items) >= 4:
+        return True
+    return False
 
 
 def extract_fingerprint(drawings, seed_rect, vlm_hints=None):
@@ -804,12 +828,99 @@ def find_all_walls(drawings, fp):
         # --- Phase C: component filter ---
         components = _connected_components(adjacency)
         significant = [c for c in components if len(c) >= 3]
+        small_comps = [c for c in components if 1 <= len(c) < 3]
         for c in significant:
             wall_indices.update(c)
 
         print(f"  Phase B/C: {len(components)} total components, "
               f"{len(significant)} significant (>=3 drawings), "
               f"{len(wall_indices)} wall drawings")
+
+        # --- Phase C2: gap-bridging for strokes ---
+        STROKE_BRIDGE_EPS = 15.0
+        STROKE_MAX_BRIDGE_GAP = 150.0
+        all_comps = significant + small_comps
+
+        if len(all_comps) > 1:
+            matched_set = set(matched)
+            comp_grid = SpatialGrid(
+                cell_size=max(2 * STROKE_BRIDGE_EPS, 1.0))
+            comp_bboxes = {}
+            for comp_id, comp in enumerate(all_comps):
+                xs, ys = [], []
+                for idx in comp:
+                    for px, py in _extract_endpoints(drawings[idx]):
+                        comp_grid.insert(px, py, comp_id)
+                        xs.append(px)
+                        ys.append(py)
+                if xs:
+                    comp_bboxes[comp_id] = (min(xs), min(ys),
+                                            max(xs), max(ys))
+
+            merges = set()
+            for i, d in enumerate(drawings):
+                if i in matched_set:
+                    continue
+                endpoints = _extract_endpoints(d)
+                if not endpoints:
+                    continue
+                d_rect = d["rect"]
+                if max(d_rect.width, d_rect.height) > STROKE_MAX_BRIDGE_GAP:
+                    continue
+                near_comps = set()
+                for px, py in endpoints:
+                    near_comps.update(
+                        comp_grid.query(px, py, STROKE_BRIDGE_EPS))
+                if len(near_comps) >= 2:
+                    comp_list = sorted(near_comps)
+                    for a in range(len(comp_list)):
+                        for b in range(a + 1, len(comp_list)):
+                            ca, cb = comp_list[a], comp_list[b]
+                            if ca in comp_bboxes and cb in comp_bboxes:
+                                ba = comp_bboxes[ca]
+                                bb = comp_bboxes[cb]
+                                dx = max(0, max(ba[0], bb[0])
+                                         - min(ba[2], bb[2]))
+                                dy = max(0, max(ba[1], bb[1])
+                                         - min(ba[3], bb[3]))
+                                if math.hypot(dx, dy) <= STROKE_MAX_BRIDGE_GAP:
+                                    merges.add((ca, cb))
+
+            parent = list(range(len(all_comps)))
+
+            def _find_s(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            def _union_s(a, b):
+                ra, rb = _find_s(a), _find_s(b)
+                if ra != rb:
+                    parent[rb] = ra
+
+            for a, b in merges:
+                _union_s(a, b)
+
+            merged_groups = defaultdict(set)
+            for comp_id, comp in enumerate(all_comps):
+                merged_groups[_find_s(comp_id)].update(comp)
+            comps_merged = sorted(merged_groups.values(),
+                                  key=len, reverse=True)
+
+            bridges_made = len(all_comps) - len(comps_merged)
+            if bridges_made > 0:
+                # Re-filter: merged groups >= 3 get added
+                rescued = set()
+                for c in comps_merged:
+                    if len(c) >= 3 and not c.issubset(wall_indices):
+                        rescued.update(c - wall_indices)
+                if rescued:
+                    wall_indices.update(rescued)
+                print(f"  Phase C2 bridging: {len(all_comps)} -> "
+                      f"{len(comps_merged)} components "
+                      f"({bridges_made} bridges, "
+                      f"+{len(rescued)} rescued strokes)")
 
         # --- Phase D: secondary width discovery ---
         if wall_indices:
@@ -851,35 +962,157 @@ def find_all_walls(drawings, fp):
                 print(f"  Phase D: +{len(secondary_indices)} secondary-width "
                       f"drawings (widths: {sorted(sec_widths)})")
 
+        # --- Phase E2: expansion at wider epsilon ---
+        STROKE_EXPAND_EPS = 8.0
+        if wall_indices:
+            expand_grid = SpatialGrid(
+                cell_size=max(2 * STROKE_EXPAND_EPS, 1.0))
+            for idx in wall_indices:
+                for px, py in _extract_endpoints(drawings[idx]):
+                    expand_grid.insert(px, py, idx)
+
+            # Collect known wall widths (primary + secondary)
+            wall_widths = {ew}
+            if secondary_indices:
+                wall_widths.update(
+                    round(drawings[i].get("width", 0), 1)
+                    for i in secondary_indices)
+
+            expansion = set()
+            for i, d in enumerate(drawings):
+                if i in wall_indices:
+                    continue
+                c, w = d.get("color"), d.get("width")
+                if not c or not w:
+                    continue
+                if not all(abs(a - b) < 0.05 for a, b in zip(c, ec)):
+                    continue
+                # Must match primary or secondary width
+                if not any(abs(w - ww) < 0.15 for ww in wall_widths):
+                    continue
+                for px, py in _extract_endpoints(d):
+                    if expand_grid.query(px, py, STROKE_EXPAND_EPS):
+                        expansion.add(i)
+                        break
+
+            if expansion:
+                wall_indices.update(expansion)
+                print(f"  Phase E2 expanded: +{len(expansion)} adjacent "
+                      f"same-class strokes")
+
     else:
         # ============================================================
-        # PATH 2: Fill-based matching (solid_fill walls) — two-pass
+        # PATH 2: Fill-based matching (solid_fill walls)
         # ============================================================
         fc = fp["fill_color"]
         FILL_EPS = 8.0
+        BRIDGE_EPS = 25.0
+        MAX_BRIDGE_GAP = 200.0
 
-        # -- Pass 1: high-confidence wall fills (shape-filtered) --------
-        confident = []
+        # -- Pass 1: find all wall-shaped fills -------------------------
+        candidates = []
+        cand_set = set()
         for i, d in enumerate(drawings):
-            if d.get("fill") == fc and _is_wall_shaped(d["rect"]):
-                confident.append(i)
+            if (d.get("fill") == fc and _is_wall_shaped(d["rect"])
+                    and _is_wall_fill(d)):
+                candidates.append(i)
+                cand_set.add(i)
 
-        print(f"  Pass 1 (fill): {len(confident)} wall-shaped fills")
+        print(f"  Pass 1 (fill): {len(candidates)} wall-shaped fills")
 
-        # Build connectivity among confident fills, keep components >= 2
-        # to establish the wall network (drops truly isolated noise)
-        adj1 = _build_connectivity_graph(drawings, confident, epsilon=FILL_EPS)
+        # Build connectivity among candidates
+        adj1 = _build_connectivity_graph(drawings, candidates, epsilon=FILL_EPS)
         comps1 = _connected_components(adj1)
-        for c in comps1:
+        print(f"  Pass 1 components: {[len(c) for c in comps1[:10]]}")
+
+        # -- Pass 2: gap-bridging — merge components via intermediate
+        #    vectors (window frames, door arcs, etc.) ------------------
+        if len(comps1) > 1:
+            comp_grid = SpatialGrid(cell_size=max(2 * BRIDGE_EPS, 1.0))
+            comp_bboxes = {}
+            for comp_id, comp in enumerate(comps1):
+                xs, ys = [], []
+                for idx in comp:
+                    for px, py in _extract_endpoints(drawings[idx]):
+                        comp_grid.insert(px, py, comp_id)
+                        xs.append(px)
+                        ys.append(py)
+                if xs:
+                    comp_bboxes[comp_id] = (min(xs), min(ys),
+                                            max(xs), max(ys))
+
+            # Find drawings that bridge two different components
+            merges = set()
+            for i, d in enumerate(drawings):
+                if i in cand_set:
+                    continue
+                endpoints = _extract_endpoints(d)
+                if not endpoints:
+                    continue
+                # Skip large drawings (grid lines, section cuts)
+                d_rect = d["rect"]
+                if max(d_rect.width, d_rect.height) > MAX_BRIDGE_GAP:
+                    continue
+                # Which components does this drawing touch?
+                near_comps = set()
+                for px, py in endpoints:
+                    near_comps.update(
+                        comp_grid.query(px, py, BRIDGE_EPS))
+                if len(near_comps) >= 2:
+                    comp_list = sorted(near_comps)
+                    for a in range(len(comp_list)):
+                        for b in range(a + 1, len(comp_list)):
+                            ca, cb = comp_list[a], comp_list[b]
+                            if ca in comp_bboxes and cb in comp_bboxes:
+                                ba = comp_bboxes[ca]
+                                bb = comp_bboxes[cb]
+                                dx = max(0, max(ba[0], bb[0])
+                                         - min(ba[2], bb[2]))
+                                dy = max(0, max(ba[1], bb[1])
+                                         - min(ba[3], bb[3]))
+                                if math.hypot(dx, dy) <= MAX_BRIDGE_GAP:
+                                    merges.add((ca, cb))
+
+            # Union-find to merge bridged components
+            parent = list(range(len(comps1)))
+
+            def _find(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            def _union(a, b):
+                ra, rb = _find(a), _find(b)
+                if ra != rb:
+                    parent[rb] = ra
+
+            for a, b in merges:
+                _union(a, b)
+
+            merged_groups = defaultdict(set)
+            for comp_id, comp in enumerate(comps1):
+                merged_groups[_find(comp_id)].update(comp)
+            comps_final = sorted(merged_groups.values(),
+                                 key=len, reverse=True)
+
+            bridges_made = len(comps1) - len(comps_final)
+            if bridges_made > 0:
+                print(f"  Pass 2 bridging: {len(comps1)} -> "
+                      f"{len(comps_final)} components "
+                      f"({bridges_made} bridges)")
+        else:
+            comps_final = comps1
+
+        # -- Pass 3: filter — keep merged components >= 2 --------------
+        for c in comps_final:
             if len(c) >= 2:
                 wall_indices.update(c)
+        print(f"  Pass 3 filtered: {len(wall_indices)} fills in "
+              f"{sum(1 for c in comps_final if len(c) >= 2)} "
+              f"components (>= 2)")
 
-        print(f"  Pass 1 kept: {len(wall_indices)} fills in "
-              f"{sum(1 for c in comps1 if len(c) >= 2)} components (>= 2)")
-
-        # -- Pass 2: expand — pull in ANY same-color fill adjacent to
-        #    confirmed walls (regardless of shape).  Also drop isolated
-        #    pass-1 fills that aren't near the wall network.
+        # -- Pass 4: expand to adjacent same-color fills ----------------
         if wall_indices:
             wall_grid = SpatialGrid(cell_size=max(2 * FILL_EPS, 1.0))
             for idx in wall_indices:
@@ -892,16 +1125,16 @@ def find_all_walls(drawings, fp):
                     continue
                 if d.get("fill") != fc:
                     continue
-                # Any fill with the right color adjacent to a confirmed wall
+                if not _is_wall_fill(d):
+                    continue
                 for px, py in _extract_endpoints(d):
-                    if wall_grid.query(px, py, FILL_EPS):
+                    if wall_grid.query(px, py, 20.0):
                         expansion.add(i)
                         break
 
             if expansion:
                 wall_indices.update(expansion)
-                print(f"  Pass 2 expanded: +{len(expansion)} adjacent fills "
-                      f"(junctions, short segments)")
+                print(f"  Pass 4 expanded: +{len(expansion)} adjacent fills")
 
         print(f"  Total fill walls: {len(wall_indices)}")
 
@@ -1115,8 +1348,8 @@ def process_pdf(pdf_path, tag=None):
     # Sanitise for use in filenames
     tag = tag.replace(" ", "_")
 
-    overlay_path = f"output/wall_overlay_{tag}.png"
-    debug_path = f"output/debug_vlm_seed_{tag}.png"
+    overlay_path = f"wall_overlay_{tag}.png"
+    debug_path = f"debug_vlm_seed_{tag}.png"
 
     print("=" * 60)
     print(f"  WALL DETECTION — {os.path.basename(pdf_path)}")
@@ -1138,12 +1371,6 @@ def process_pdf(pdf_path, tag=None):
               f"(attempt {attempt})...")
         try:
             seeds = vlm_identify_wall(page, dpi=150)
-
-            # VLM seeds are in page.rect (rotated) coordinates, but
-            # get_drawings() returns mediabox coordinates.  Derotate
-            # so seed rects align with the drawing coordinate space.
-            derot = page.derotation_matrix
-            seeds = [(rect * derot, hints) for rect, hints in seeds]
 
             # Snap VLM seed boxes to actual wall vectors
             seeds = _refine_seeds(seeds, drawings)
@@ -1238,9 +1465,10 @@ def process_pdf(pdf_path, tag=None):
 
 
 DEFAULT_PDFS = [
-    "./data/352 AA copy 2.pdf",
-    "./data/main_st_ex.pdf",
-    "./data/main_st_ex2.pdf",
+    "./352 AA copy 2.pdf",
+    "./second_floor_352.pdf",
+    "./main_st_ex.pdf",
+    "./main_st_ex2.pdf",
 ]
 
 

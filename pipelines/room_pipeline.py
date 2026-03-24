@@ -1360,12 +1360,72 @@ def _build_footprint(
     return ShapelyPolygon(largest.exterior)
 
 
+def _build_wall_boundary(
+    segments: list[WallSegment],
+    scale_ratio: float = 96.0,
+) -> Optional[ShapelyPolygon]:
+    """Build a tight building boundary that follows the actual wall faces.
+
+    Buffers wall segments by just the wall thickness (~3 PDF points) so
+    they overlap at corners, unions them, and takes the exterior rings
+    of all significant polygons.  Unlike ``_build_footprint`` (which
+    buffers by 3 ft to bridge doorways), this produces a boundary with
+    NO perimeter band — it hugs the outer wall faces directly.
+
+    Returns a single polygon (union of all significant building sections).
+    """
+    # Buffer by ~1.5 ft real — large enough to bridge doorway gaps and
+    # encompass the full wall thickness, small enough to avoid a wide
+    # perimeter band.
+    buffer_dist = 1.5 * 12.0 / scale_ratio * 72.0
+    buffer_dist = max(6.0, min(buffer_dist, 20.0))
+
+    lines = []
+    for seg in segments:
+        try:
+            ls = ShapelyLineString([seg.p1, seg.p2])
+            if ls.length > 0.5:
+                lines.append(ls.buffer(buffer_dist))
+        except Exception:
+            continue
+
+    if not lines:
+        return None
+
+    union = unary_union(lines)
+
+    # Collect all significant polygons (> 100 sqpt), not just the largest.
+    # This captures disconnected building sections (e.g. upper and lower
+    # halves separated by wide doorway gaps).
+    min_area = 100.0  # sqpt — reject tiny fragments
+    parts = []
+    if union.geom_type == "MultiPolygon":
+        for geom in union.geoms:
+            if geom.area > min_area:
+                parts.append(ShapelyPolygon(geom.exterior))
+    elif union.geom_type == "Polygon":
+        if union.area > min_area:
+            parts.append(ShapelyPolygon(union.exterior))
+
+    if not parts:
+        return None
+
+    # Union all significant parts.  Keep as MultiPolygon if needed —
+    # don't use convex_hull which would include exterior space between
+    # disconnected building sections.
+    combined = unary_union(parts)
+    if combined.geom_type in ("Polygon", "MultiPolygon"):
+        return combined
+    return None
+
+
 def assemble_room_polygons(
     wall_segments: list[WallSegment],
     door_segments: list[WallSegment],
     scale_ratio: float,
     min_area_sqft: float = 25.0,
     footprint: Optional[ShapelyPolygon] = None,
+    wall_boundary: Optional[ShapelyPolygon] = None,
     raw_wall_segments: Optional[list[WallSegment]] = None,
     raw_door_segments: Optional[list[WallSegment]] = None,
 ) -> list[list[tuple[float, float]]]:
@@ -1455,6 +1515,31 @@ def assemble_room_polygons(
         ]
         print(f"  Footprint filter: {before} → {len(polygons)}")
 
+    # ── Clip to wall boundary ────────────────────────────────────────
+    # Graph cycles can spill beyond exterior walls.  Clip each polygon
+    # to the wall boundary so rooms are constrained to the actual
+    # building interior.  Remove polygons entirely outside the boundary.
+    if wall_boundary is not None and polygons:
+        clipped = []
+        for verts in polygons:
+            try:
+                poly = ShapelyPolygon(verts)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                cut = poly.intersection(wall_boundary)
+                if cut.is_empty:
+                    continue
+                # Take the largest piece if intersection produces fragments.
+                if cut.geom_type == "MultiPolygon":
+                    cut = max(cut.geoms, key=lambda g: g.area)
+                if cut.geom_type != "Polygon" or cut.area < min_area_sqpt:
+                    continue
+                clipped.append(list(cut.exterior.coords[:-1]))
+            except Exception:
+                continue
+        print(f"  Wall boundary clip: {len(polygons)} → {len(clipped)}")
+        polygons = clipped
+
     print(f"  Room polygons after filtering: {len(polygons)}")
 
     # Fall back to raster if graph results are insufficient.
@@ -1464,7 +1549,9 @@ def assemble_room_polygons(
         print(f"  Graph found only {len(big_rooms)} room-sized polygons — using raster …")
         raster_door = raw_door_segments if raw_door_segments is not None else door_segments
         raster_segs = (raw_wall_segments or wall_segments) + raster_door
-        raster_polys = _fallback_raster_polygons(raster_segs, scale_ratio, footprint=footprint)
+        raster_polys = _fallback_raster_polygons(raster_segs, scale_ratio,
+                                                  footprint=footprint,
+                                                  wall_boundary=wall_boundary)
         if len(raster_polys) > len(big_rooms):
             polygons = raster_polys
 
@@ -1496,6 +1583,7 @@ def _fallback_raster_polygons(
     all_segs: list[WallSegment],
     scale_ratio: float,
     footprint: Optional[ShapelyPolygon] = None,
+    wall_boundary: Optional[ShapelyPolygon] = None,
     render_dpi: int = 150,
     line_thickness: int = 6,
     close_kernel: int = 50,
@@ -1518,25 +1606,32 @@ def _fallback_raster_polygons(
     w = int((x_max - x_min) * scale) + 2 * pad
     h = int((y_max - y_min) * scale) + 2 * pad
 
-    # ── Build footprint mask ─────────────────────────────────────────
+    # ── Build wall boundary mask (tight) and footprint mask (loose) ──
+    # The wall boundary follows actual wall faces — no perimeter band.
+    # The footprint is a fallback for filtering option-plan insets.
+    wall_bnd_mask = np.zeros((h, w), dtype=np.uint8)
+    if wall_boundary is not None:
+        # Handle both Polygon and MultiPolygon.
+        if wall_boundary.geom_type == "MultiPolygon":
+            polys = list(wall_boundary.geoms)
+        else:
+            polys = [wall_boundary]
+        for poly in polys:
+            wb_coords = list(poly.exterior.coords)
+            wb_pixels = np.array([
+                (int((x - x_min) * scale) + pad, int((y - y_min) * scale) + pad)
+                for x, y in wb_coords
+            ], dtype=np.int32)
+            cv2.fillPoly(wall_bnd_mask, [wb_pixels], 255)
+
+    footprint_mask = np.zeros((h, w), dtype=np.uint8)
     if footprint is not None:
         fp_coords = list(footprint.exterior.coords)
         fp_pixels = np.array([
             (int((x - x_min) * scale) + pad, int((y - y_min) * scale) + pad)
             for x, y in fp_coords
         ], dtype=np.int32)
-        footprint_mask = np.zeros((h, w), dtype=np.uint8)
         cv2.fillPoly(footprint_mask, [fp_pixels], 255)
-    else:
-        all_pts = []
-        for seg in all_segs:
-            all_pts.append((int((seg.p1[0] - x_min) * scale) + pad,
-                            int((seg.p1[1] - y_min) * scale) + pad))
-            all_pts.append((int((seg.p2[0] - x_min) * scale) + pad,
-                            int((seg.p2[1] - y_min) * scale) + pad))
-        hull_pts = cv2.convexHull(np.array(all_pts, dtype=np.int32))
-        footprint_mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.fillPoly(footprint_mask, [hull_pts], 255)
 
     # ── Draw only extracted wall + door-ray segments ─────────────────
     canvas = np.zeros((h, w), dtype=np.uint8)
@@ -1557,20 +1652,13 @@ def _fallback_raster_polygons(
         k_sm = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         canvas = cv2.morphologyEx(canvas, cv2.MORPH_CLOSE, k_sm)
 
-    # ── Draw footprint boundary + canvas border to seal exterior ─────
-    if footprint is not None:
-        cv2.polylines(canvas, [fp_pixels], isClosed=True, color=255, thickness=line_thickness)
-    cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), 255, 2)
-
-    cv2.imwrite("output/raster_debug.png", canvas)
-
-    cv2.imwrite("raster_debug.png", canvas)
-
     # ── Seal exterior with thick footprint boundary + flood-fill ────
     if footprint is not None:
         cv2.polylines(canvas, [fp_pixels], isClosed=True, color=255,
                       thickness=line_thickness * 3)
     cv2.rectangle(canvas, (0, 0), (w - 1, h - 1), 255, 3)
+
+    cv2.imwrite("output/raster_debug.png", canvas)
 
     # Flood-fill from corner — marks all exterior as 128.
     flood = canvas.copy()
@@ -2013,11 +2101,17 @@ def run_pipeline(
     else:
         print("  WARNING: Could not build footprint")
 
+    # Build tight wall boundary (follows actual wall faces, no buffer band).
+    wall_boundary = _build_wall_boundary(raw_segments, scale_ratio=scale_ratio)
+    if wall_boundary is not None:
+        print(f"  Wall boundary area: {wall_boundary.area * sqpt_to_sqft:.0f} ft²")
+
     # ── Step 4: Polygon assembly ─────────────────────────────────────
     print("\n[4/5] Assembling room polygons …")
     os.environ["_ROOM_PIPELINE_PDF"] = pdf_path
     raw_polygons = assemble_room_polygons(segments, door_segs, scale_ratio,
                                           footprint=footprint,
+                                          wall_boundary=wall_boundary,
                                           raw_wall_segments=raw_segments,
                                           raw_door_segments=door_segs_full)
 
