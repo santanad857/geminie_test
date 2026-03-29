@@ -1,8 +1,0 @@
-{
-  "is_walls": false,
-  "wall_pct": 0,
-  "false_positive_categories": [
-    "title block"
-  ],
-  "reasoning": "The red elements do not represent architectural walls but rather the title block and possibly other annotations. Hence, the red-highlighted area is not composed of actual walls."
-}

@@ -1,6 +1,0 @@
-{
-  "is_walls": true,
-  "wall_pct": 100,
-  "false_positive_categories": [],
-  "reasoning": "The red elements primarily represent architectural walls as there are no non-wall elements highlighted in red in the plan."
-}

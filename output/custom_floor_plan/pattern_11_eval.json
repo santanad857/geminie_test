@@ -1,6 +1,0 @@
-{
-  "is_walls": true,
-  "wall_pct": 100,
-  "false_positive_categories": [],
-  "reasoning": "The red elements primarily represent structural walls as they outline room boundaries and are elongated, forming connected networks."
-}

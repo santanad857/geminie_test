@@ -1,8 +1,0 @@
-{
-  "is_walls": true,
-  "wall_pct": 95,
-  "false_positive_categories": [
-    "dimension lines"
-  ],
-  "reasoning": "The red elements are primarily long, narrow rectangles that traverse the floor plan, indicating they are likely architectural walls defining room boundaries. A small portion of the red elements corresponds to dimension lines."
-}
