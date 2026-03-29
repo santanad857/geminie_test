@@ -1,0 +1,9 @@
+{
+  "is_walls": true,
+  "wall_pct": 90,
+  "false_positive_categories": [
+    "title block",
+    "dimension lines"
+  ],
+  "reasoning": "The majority of the red elements represent architectural walls, as they form elongated, connected networks defining room boundaries. A small portion of red is used for title block details and dimension lines."
+}

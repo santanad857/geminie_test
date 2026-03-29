@@ -1,0 +1,9 @@
+{
+  "is_walls": false,
+  "wall_pct": 0,
+  "false_positive_categories": [
+    "furniture",
+    "text"
+  ],
+  "reasoning": "The red elements primarily highlight furniture and text, not walls. The walls are represented by solid black or blue lines, not the red strokes."
+}

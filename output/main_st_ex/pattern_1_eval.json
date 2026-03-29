@@ -1,0 +1,11 @@
+{
+  "is_walls": true,
+  "wall_pct": 85,
+  "false_positive_categories": [
+    "text",
+    "dimension lines",
+    "door swings",
+    "title block"
+  ],
+  "reasoning": "The red elements primarily represent architectural walls that define the rooms and spaces. However, other elements such as text, dimension lines, door swings, and the title block are also highlighted in red, but they occupy significantly less area compared to the walls."
+}

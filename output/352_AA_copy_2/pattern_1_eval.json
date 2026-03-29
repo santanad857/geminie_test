@@ -1,0 +1,10 @@
+{
+  "is_walls": false,
+  "wall_pct": 0,
+  "false_positive_categories": [
+    "text",
+    "dimension lines",
+    "door swings"
+  ],
+  "reasoning": "The red elements primarily highlight text, dimensions, and door swings, not the architectural walls."
+}

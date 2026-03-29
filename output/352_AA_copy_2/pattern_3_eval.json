@@ -1,0 +1,11 @@
+{
+  "is_walls": true,
+  "wall_pct": 80,
+  "false_positive_categories": [
+    "dimension lines",
+    "door swings",
+    "text",
+    "annotation leaders"
+  ],
+  "reasoning": "The red elements primarily represent the walls that define the rooms and spaces. However, some red lines also include dimension lines, door swings, text, and annotation leaders, which are not walls."
+}

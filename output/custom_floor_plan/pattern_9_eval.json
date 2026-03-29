@@ -1,0 +1,11 @@
+{
+  "is_walls": false,
+  "wall_pct": 0,
+  "false_positive_categories": [
+    "text",
+    "dimension lines",
+    "door swings",
+    "title block"
+  ],
+  "reasoning": "The red elements primarily represent non-wall elements such as text, dimension lines, door swings, and parts of the title block rather than structural walls."
+}

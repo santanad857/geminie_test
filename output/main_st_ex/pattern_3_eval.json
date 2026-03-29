@@ -1,0 +1,10 @@
+{
+  "is_walls": false,
+  "wall_pct": 0,
+  "false_positive_categories": [
+    "text",
+    "dimension lines",
+    "fixtures"
+  ],
+  "reasoning": "The red elements are text, dimension lines, and fixtures like restroom symbols, not structural walls."
+}

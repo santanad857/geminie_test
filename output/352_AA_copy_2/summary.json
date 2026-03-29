@@ -1,0 +1,26 @@
+{
+  "pdf": "352 AA copy 2.pdf",
+  "pt_per_inch": 0.75,
+  "total_drawings": 13718,
+  "valid_after_prefilter": 13718,
+  "patterns_enumerated": 5,
+  "patterns_evaluated": 5,
+  "patterns_approved": 2,
+  "approved_labels": [
+    "hatch(0.80,0.80,0.80) w=0.12 ~45deg x264",
+    "stroke(0.00,0.00,0.00) w=0.6 x176"
+  ],
+  "wall_drawings_before_unification": 438,
+  "wall_drawings_final": 450,
+  "fill_drawings": 0,
+  "stroke_drawings": 450,
+  "wall_coverage_pct": 3.3,
+  "thresholds": {
+    "min_thickness": 1.5,
+    "max_thickness": 10.5,
+    "min_length": 3.0,
+    "connectivity_eps": 2.25,
+    "bridge_eps": 13.5,
+    "max_bridge_gap": 408.0
+  }
+}

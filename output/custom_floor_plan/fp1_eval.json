@@ -1,0 +1,5 @@
+{
+  "score": 8,
+  "include": true,
+  "reason": "Detailed architectural floor plan with clearly highlighted walls in red, room labels, dimensions, and structural elements making it highly useful for training wall detection and floor plan analysis models."
+}

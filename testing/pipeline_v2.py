@@ -175,6 +175,42 @@ def _angle_close(a, b, tol=10):
 
 
 # ---------------------------------------------------------------------------
+# Scale-aware thresholds
+# ---------------------------------------------------------------------------
+
+KNOWN_SCALES = {
+    "352 AA copy 2.pdf": 0.75,
+    "second_floor_352.pdf": 0.75,
+    "custom_floor_plan.pdf": 1.5,
+    "main_st_ex.pdf": 0.6,
+    "main_st_ex2.pdf": 0.6,
+}
+DEFAULT_PT_PER_INCH = 1.0
+
+
+def compute_thresholds(pt_per_inch):
+    ppi = pt_per_inch
+    return {
+        "min_thickness": max(2.0 * ppi, 0.8),
+        "max_thickness": 14.0 * ppi,
+        "min_length": 4.0 * ppi,
+        "min_aspect": 1.0,
+        "large_fill_min": 12.0 * ppi,
+        "fill_eps": 6.0 * ppi,
+        "stroke_eps": max(2.0 * ppi, 1.5),
+        "hatch_cluster_eps": 4.0 * ppi,
+        "bridge_eps": 18.0 * ppi,
+        "max_bridge_gap": 200.0 * ppi,
+        "fill_expand_eps": 12.0 * ppi,
+        "mc_expand_eps": 8.0 * ppi,
+        "hatch_pad": 2.0 * ppi,
+        "border_intersect_pad": max(1.0 * ppi, 0.5),
+        "seed_expand": max(36.0 * ppi, 20),
+        "snap_search": max(18.0 * ppi, 15),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Step 2 — VLM seed locator (enhanced)
 # ---------------------------------------------------------------------------
 
@@ -560,9 +596,14 @@ def save_debug_vlm_seed(pdf_path, seeds, dpi=150,
 # Step 3 — Fingerprint extraction (generalised)
 # ---------------------------------------------------------------------------
 
-def _is_wall_shaped(rect, min_thickness=1.5, max_thickness=25, min_length=6,
-                     min_aspect=1.0):
+def _is_wall_shaped(rect, thresholds=None):
     """True if *rect* has wall-like proportions (long and thin)."""
+    if thresholds is None:
+        thresholds = compute_thresholds(DEFAULT_PT_PER_INCH)
+    min_thickness = thresholds["min_thickness"]
+    max_thickness = thresholds["max_thickness"]
+    min_length = thresholds["min_length"]
+    min_aspect = thresholds["min_aspect"]
     narrow = min(rect.width, rect.height)
     wide = max(rect.width, rect.height)
     if narrow < min_thickness or narrow > max_thickness:
@@ -574,7 +615,7 @@ def _is_wall_shaped(rect, min_thickness=1.5, max_thickness=25, min_length=6,
     return True
 
 
-def _is_wall_fill(drawing):
+def _is_wall_fill(drawing, thresholds=None):
     """True if *drawing* is structurally a wall fill (not an arrow/symbol).
 
     Wall fills are rectangles (``re``/``qu`` items) or closed polygonal
@@ -582,9 +623,12 @@ def _is_wall_fill(drawing):
     items).  This check prevents arrowheads from entering the wall
     candidate set.
     """
+    if thresholds is None:
+        thresholds = compute_thresholds(DEFAULT_PT_PER_INCH)
+    large_fill_min = thresholds["large_fill_min"]
     # Large fills are always wall candidates regardless of shape
     r = drawing["rect"]
-    if max(r.width, r.height) >= 20:
+    if max(r.width, r.height) >= large_fill_min:
         return True
     # Small fills: accept rectangles, quads, or 4+ segment closed paths
     items = drawing["items"]
@@ -598,7 +642,7 @@ def _is_wall_fill(drawing):
     return False
 
 
-def extract_fingerprint(drawings, seed_rect, vlm_hints=None):
+def extract_fingerprint(drawings, seed_rect, vlm_hints=None, thresholds=None):
     """Derive the wall vector signature from drawings inside *seed_rect*.
 
     Tries three strategies in order of signal distinctiveness:
@@ -606,7 +650,9 @@ def extract_fingerprint(drawings, seed_rect, vlm_hints=None):
       B. Filled walls  — wall-shaped filled rectangles (with or without stroke).
       C. Stroked walls — stroke-class ranking (fallback for thick-stroke plans).
     """
-    EXPAND = 60  # PDF points
+    if thresholds is None:
+        thresholds = compute_thresholds(DEFAULT_PT_PER_INCH)
+    EXPAND = thresholds["seed_expand"]
     expanded = seed_rect + (-EXPAND, -EXPAND, EXPAND, EXPAND)
     region = [d for d in drawings if d["rect"].intersects(expanded)]
     print(f"  {len(region)} drawings in seed region (expansion={EXPAND}pt)")
@@ -670,7 +716,7 @@ def extract_fingerprint(drawings, seed_rect, vlm_hints=None):
     wall_fills = [
         d for d in region
         if d.get("fill") and d["fill"] != (1.0, 1.0, 1.0)
-        and _is_wall_shaped(d["rect"])
+        and _is_wall_shaped(d["rect"], thresholds)
     ]
 
     if len(wall_fills) >= 2:
@@ -866,7 +912,61 @@ def _gap_bridge_components(drawings, all_comps, exclude_set,
     return sorted(merged_groups.values(), key=len, reverse=True)
 
 
-def find_all_walls(drawings, fp):
+def auto_detect_fingerprints(drawings, thresholds=None):
+    """Detect ALL potential wall fingerprints from the drawing set.
+    Returns list of fingerprint dicts ranked by score."""
+    if thresholds is None:
+        thresholds = compute_thresholds(DEFAULT_PT_PER_INCH)
+    fps = []
+
+    # Strategy A: hatching
+    hatch_candidates = [d for d in drawings
+        if d.get("color") and d["color"] != (0.0, 0.0, 0.0)
+        and len(d["items"]) >= 3 and 0 < (d.get("width") or 0) < 0.2]
+    if len(hatch_candidates) >= 10:
+        ref = max(hatch_candidates, key=lambda d: len(d["items"]))
+        angle = _dominant_angle(ref["items"])
+        hatch = {"color": ref["color"], "width": ref["width"],
+                 "angle": angle if angle is not None else 45}
+        hatch_rects = [d["rect"] for d in hatch_candidates]
+        border_ws = Counter()
+        for d in drawings:
+            c = d.get("color"); w = d.get("width") or 0
+            if c != (0.0, 0.0, 0.0) or w <= 0.3: continue
+            for hr in hatch_rects[:50]:
+                if d["rect"].intersects(hr + (-5, -5, 5, 5)):
+                    border_ws[round(w, 1)] += 1; break
+        if border_ws:
+            ew = border_ws.most_common(1)[0][0]
+            sec = [w for w in sorted(border_ws.keys()) if w != ew]
+            fps.append({"edge_color": (0,0,0), "edge_width": ew,
+                "secondary_edge_widths": sec, "fill_color": None,
+                "hatch": hatch, "wall_style": "hatched",
+                "_score": len(hatch_candidates),
+                "_label": f"hatched (border w={ew})"})
+
+    # Strategy B: fills by color
+    wall_fills = [d for d in drawings
+        if d.get("fill") and d["fill"] != (1.0, 1.0, 1.0)
+        and _is_wall_shaped(d["rect"], thresholds) and _is_wall_fill(d, thresholds)]
+    if wall_fills:
+        color_groups = defaultdict(list)
+        for d in wall_fills:
+            color_groups[d["fill"]].append(d)
+        for color, fills in sorted(color_groups.items(), key=lambda x: -len(x[1])):
+            if len(fills) < 3: continue
+            r,g,b = color
+            fps.append({"edge_color": None, "edge_width": None,
+                "secondary_edge_widths": [], "fill_color": color,
+                "hatch": None, "wall_style": "solid_fill",
+                "_score": len(fills),
+                "_label": f"fill rgb({r:.2f},{g:.2f},{b:.2f}) x{len(fills)}"})
+
+    fps.sort(key=lambda f: -f.get("_score", 0))
+    return fps
+
+
+def find_all_walls(drawings, fp, thresholds=None):
     """Match the fingerprint across all drawings using connectivity filtering.
 
     Returns dict with keys:
@@ -876,14 +976,13 @@ def find_all_walls(drawings, fp):
         secondary_indices — set of indices from secondary-width discovery
         components — list of significant connected components (sets of indices)
     """
+    if thresholds is None:
+        thresholds = compute_thresholds(DEFAULT_PT_PER_INCH)
+
     ec = fp["edge_color"]
     ew = fp["edge_width"]
     wall_indices = set()
     secondary_indices = set()
-
-    # Shared constants for gap-bridging (both paths)
-    BRIDGE_EPS = 25.0
-    MAX_BRIDGE_GAP = 200.0
 
     if ec is not None and fp.get("hatch"):
         # ============================================================
@@ -916,7 +1015,7 @@ def find_all_walls(drawings, fp):
 
         # --- Step 2: cluster hatching into wall regions ---
         hatch_adj = _build_connectivity_graph(
-            drawings, hatch_indices, epsilon=5.0)
+            drawings, hatch_indices, epsilon=thresholds["hatch_cluster_eps"])
         hatch_comps = _connected_components(hatch_adj)
         # Keep clusters >= 2 hatching drawings (single stray hatch = noise)
         hatch_regions = [c for c in hatch_comps if len(c) >= 2]
@@ -925,21 +1024,25 @@ def find_all_walls(drawings, fp):
               f"{len(hatch_regions)} wall regions "
               f"({sum(len(c) for c in hatch_regions)} drawings)")
 
-        # Build bounding boxes for each hatching cluster
-        HATCH_PAD = 3.0  # small expansion for intersection check
-        hatch_bboxes = []
+        # Build SpatialGrid indexed by hatching drawing index for
+        # individual hatching rect intersection checks.
+        HATCH_PAD = thresholds["hatch_pad"]
+        hatch_grid = SpatialGrid(cell_size=max(2 * HATCH_PAD + 10, 6.0))
+        all_hatch_set = set()
         for comp in hatch_regions:
-            rects = [drawings[idx]["rect"] for idx in comp]
-            x0 = min(r.x0 for r in rects) - HATCH_PAD
-            y0 = min(r.y0 for r in rects) - HATCH_PAD
-            x1 = max(r.x1 for r in rects) + HATCH_PAD
-            y1 = max(r.y1 for r in rects) + HATCH_PAD
-            hatch_bboxes.append(fitz.Rect(x0, y0, x1, y1))
+            for hi in comp:
+                all_hatch_set.add(hi)
+                hr = drawings[hi]["rect"]
+                cx = (hr.x0 + hr.x1) / 2
+                cy = (hr.y0 + hr.y1) / 2
+                hatch_grid.insert(cx, cy, hi)
 
         # --- Step 3: find border strokes that overlap hatching regions ---
-        # Use rect intersection (not endpoint proximity) to reject
-        # dimension lines, text, and window strokes that merely
-        # terminate near a wall but don't overlap its hatching.
+        # Use rect intersection against individual hatching drawing rects
+        # (not bounding boxes) to reject dimension lines, text, and window
+        # strokes that merely terminate near a wall but don't overlap its
+        # hatching.
+        pad = (-HATCH_PAD, -HATCH_PAD, HATCH_PAD, HATCH_PAD)
         for i, d in enumerate(drawings):
             c, w = d.get("color"), d.get("width")
             if not c or not w:
@@ -949,8 +1052,12 @@ def find_all_walls(drawings, fp):
             if abs(w - ew) > 0.15:
                 continue
             dr = d["rect"]
-            for hb in hatch_bboxes:
-                if dr.intersects(hb):
+            dr_cx = (dr.x0 + dr.x1) / 2
+            dr_cy = (dr.y0 + dr.y1) / 2
+            search_r = max(dr.width, dr.height) / 2 + HATCH_PAD + 10
+            nearby = hatch_grid.query(dr_cx, dr_cy, search_r)
+            for hi in nearby:
+                if dr.intersects(drawings[hi]["rect"] + pad):
                     wall_indices.add(i)
                     break
 
@@ -972,8 +1079,12 @@ def find_all_walls(drawings, fp):
                 if not any(abs(w - sw) < 0.15 for sw in known_sec):
                     continue
                 dr = d["rect"]
-                for hb in hatch_bboxes:
-                    if dr.intersects(hb):
+                dr_cx = (dr.x0 + dr.x1) / 2
+                dr_cy = (dr.y0 + dr.y1) / 2
+                search_r = max(dr.width, dr.height) / 2 + HATCH_PAD + 10
+                nearby = hatch_grid.query(dr_cx, dr_cy, search_r)
+                for hi in nearby:
+                    if dr.intersects(drawings[hi]["rect"] + pad):
                         wall_indices.add(i)
                         secondary_indices.add(i)
                         break
@@ -1005,7 +1116,8 @@ def find_all_walls(drawings, fp):
               f"(color~{ec}, width~{ew})")
 
         # --- Phase B: connectivity graph ---
-        adjacency = _build_connectivity_graph(drawings, matched, epsilon=3.0)
+        adjacency = _build_connectivity_graph(
+            drawings, matched, epsilon=thresholds["stroke_eps"])
 
         # --- Phase C: component filter ---
         components = _connected_components(adjacency)
@@ -1023,7 +1135,8 @@ def find_all_walls(drawings, fp):
         matched_set = set(matched)
         comps_merged = _gap_bridge_components(
             drawings, all_comps, matched_set,
-            bridge_eps=BRIDGE_EPS, max_bridge_gap=MAX_BRIDGE_GAP)
+            bridge_eps=thresholds["bridge_eps"],
+            max_bridge_gap=thresholds["max_bridge_gap"])
 
         if len(comps_merged) < len(all_comps):
             rescued = set()
@@ -1058,13 +1171,14 @@ def find_all_walls(drawings, fp):
                 if w < 0.3:
                     continue
                 for px, py in _extract_endpoints(d):
-                    if wall_grid.query(px, py, 3.0):
+                    if wall_grid.query(px, py, thresholds["stroke_eps"]):
                         candidates.add(i)
                         break
 
             if candidates:
                 combined = wall_indices | candidates
-                adj2 = _build_connectivity_graph(drawings, combined, epsilon=3.0)
+                adj2 = _build_connectivity_graph(
+                    drawings, combined, epsilon=thresholds["stroke_eps"])
                 comps2 = _connected_components(adj2)
                 for comp in comps2:
                     if comp & wall_indices:
@@ -1082,28 +1196,29 @@ def find_all_walls(drawings, fp):
         # PATH 2: Fill-based matching (solid_fill walls)
         # ============================================================
         fc = fp["fill_color"]
-        FILL_EPS = 8.0
 
         # -- Pass 1: find all wall-shaped fills -------------------------
         candidates = []
         cand_set = set()
         for i, d in enumerate(drawings):
-            if (d.get("fill") == fc and _is_wall_shaped(d["rect"])
-                    and _is_wall_fill(d)):
+            if (d.get("fill") == fc and _is_wall_shaped(d["rect"], thresholds)
+                    and _is_wall_fill(d, thresholds)):
                 candidates.append(i)
                 cand_set.add(i)
 
         print(f"  Pass 1 (fill): {len(candidates)} wall-shaped fills")
 
         # Build connectivity among candidates
-        adj1 = _build_connectivity_graph(drawings, candidates, epsilon=FILL_EPS)
+        adj1 = _build_connectivity_graph(
+            drawings, candidates, epsilon=thresholds["fill_eps"])
         comps1 = _connected_components(adj1)
         print(f"  Pass 1 components: {[len(c) for c in comps1[:10]]}")
 
         # -- Pass 2: gap-bridging via intermediate vectors ---------------
         comps_final = _gap_bridge_components(
             drawings, comps1, cand_set,
-            bridge_eps=BRIDGE_EPS, max_bridge_gap=MAX_BRIDGE_GAP)
+            bridge_eps=thresholds["bridge_eps"],
+            max_bridge_gap=thresholds["max_bridge_gap"])
 
         if len(comps_final) < len(comps1):
             print(f"  Pass 2 bridging: {len(comps1)} -> "
@@ -1119,11 +1234,11 @@ def find_all_walls(drawings, fp):
               f"components (>= 2)")
 
         # -- Pass 4: expand to adjacent same-color fills ----------------
-        # Fill expansion can safely use a wider radius (20pt) because
+        # Fill expansion can safely use a wider radius because
         # fills are filtered by color + _is_wall_fill (structural shape).
-        FILL_EXPAND_EPS = 20.0
         if wall_indices:
-            wall_grid = SpatialGrid(cell_size=max(2 * FILL_EPS, 1.0))
+            wall_grid = SpatialGrid(
+                cell_size=max(2 * thresholds["fill_eps"], 1.0))
             for idx in wall_indices:
                 for px, py in _extract_endpoints(drawings[idx]):
                     wall_grid.insert(px, py, idx)
@@ -1134,10 +1249,10 @@ def find_all_walls(drawings, fp):
                     continue
                 if d.get("fill") != fc:
                     continue
-                if not _is_wall_fill(d):
+                if not _is_wall_fill(d, thresholds):
                     continue
                 for px, py in _extract_endpoints(d):
-                    if wall_grid.query(px, py, FILL_EXPAND_EPS):
+                    if wall_grid.query(px, py, thresholds["fill_expand_eps"]):
                         expansion.add(i)
                         break
 
@@ -1149,10 +1264,10 @@ def find_all_walls(drawings, fp):
         # Discover wall-shaped fills of OTHER colors adjacent to
         # confirmed walls.  Iterates because color A walls may touch
         # color B walls which touch color C walls.
-        MC_EXPAND_EPS = 15.0
         pass5_total = 0
         for mc_iter in range(5):
-            mc_grid = SpatialGrid(cell_size=max(2 * MC_EXPAND_EPS, 1.0))
+            mc_grid = SpatialGrid(
+                cell_size=max(2 * thresholds["mc_expand_eps"], 1.0))
             for idx in wall_indices:
                 for px, py in _extract_endpoints(drawings[idx]):
                     mc_grid.insert(px, py, idx)
@@ -1166,12 +1281,12 @@ def find_all_walls(drawings, fp):
                     continue
                 if f == fc:
                     continue  # same color handled by Pass 1+4
-                if not _is_wall_shaped(d["rect"]):
+                if not _is_wall_shaped(d["rect"], thresholds):
                     continue
-                if not _is_wall_fill(d):
+                if not _is_wall_fill(d, thresholds):
                     continue
                 for px, py in _extract_endpoints(d):
-                    if mc_grid.query(px, py, MC_EXPAND_EPS):
+                    if mc_grid.query(px, py, thresholds["mc_expand_eps"]):
                         mc_expansion.add(i)
                         break
 
@@ -1391,127 +1506,185 @@ def _fallback_fingerprint(drawings):
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def process_pdf(pdf_path, tag=None):
+def process_pdf(pdf_path, tag=None, pt_per_inch=None):
     """Run the full wall-detection pipeline on a single PDF.
 
+    Uses a select-merge architecture: auto-detect multiple fingerprints,
+    run each through find_all_walls, evaluate with VLM, merge approved results.
+
     *tag* is used to name output files.  If None, derived from the filename.
+    *pt_per_inch* overrides the scale lookup from KNOWN_SCALES.
     """
     if tag is None:
-        tag = os.path.splitext(os.path.basename(pdf_path))[0]
-    # Sanitise for use in filenames
-    tag = tag.replace(" ", "_")
+        tag = os.path.splitext(os.path.basename(pdf_path))[0].replace(" ", "_")
 
-    overlay_path = f"output_overlays/wall_overlay_{tag}.png"
-    debug_path = f"debug_vlm/debug_vlm_seed_{tag}.png"
+    # Scale lookup
+    basename = os.path.basename(pdf_path)
+    if pt_per_inch is None:
+        pt_per_inch = KNOWN_SCALES.get(basename, DEFAULT_PT_PER_INCH)
+    thresholds = compute_thresholds(pt_per_inch)
+
+    # Output directory
+    out_dir = f"output/{tag}"
+    os.makedirs(out_dir, exist_ok=True)
 
     print("=" * 60)
-    print(f"  WALL DETECTION — {os.path.basename(pdf_path)}")
+    print(f"  WALL DETECTION — {basename}")
+    print(f"  Scale: {pt_per_inch} pt/inch")
     print("=" * 60)
 
-    # -- Step 1: load -------------------------------------------------------
-    print("\n[1/5] Loading PDF and extracting vectors...")
+    # -- Load ---------------------------------------------------------------
+    print("\n[1] Loading PDF and extracting vectors...")
     doc = fitz.open(pdf_path)
     page = doc[0]
     drawings = page.get_drawings()
     print(f"  Page: {page.rect}  rotation={page.rotation}")
     print(f"  Total vector drawings: {len(drawings)}")
 
-    # -- Steps 2-3: VLM seed + fingerprint (with retry) --------------------
-    MAX_VLM_ATTEMPTS = 3
-    fp = None
-    for attempt in range(1, MAX_VLM_ATTEMPTS + 1):
-        print(f"\n[2/5] Asking VLM to identify one wall segment "
-              f"(attempt {attempt})...")
+    # -- Auto-detect fingerprints -------------------------------------------
+    print("\n[2] Auto-detecting wall fingerprints...")
+    fps = auto_detect_fingerprints(drawings, thresholds)
+    print(f"  Found {len(fps)} fingerprint candidates")
+    for i, fp_item in enumerate(fps[:5]):
+        print(f"    {i+1}. {fp_item.get('_label', '?')} "
+              f"(score={fp_item.get('_score', 0)})")
+
+    # -- Run each fingerprint -----------------------------------------------
+    print("\n[3] Running wall detection for each fingerprint...")
+    individual_results = []
+    for i, fp in enumerate(fps[:5]):
+        label = fp.pop("_label", f"fp{i+1}")
+        fp.pop("_score", None)
+        print(f"\n  --- Fingerprint {i+1}: {label} ---")
+        result = find_all_walls(drawings, fp, thresholds)
+        n = len(result["edges"]) + len(result["fills"]) + len(result["hatches"])
+        overlay = f"{out_dir}/fp{i+1}_overlay.png"
+        generate_overlay(pdf_path, result, output_path=overlay)
+        print(f"  {n} wall drawings detected, overlay: {overlay}")
+        individual_results.append((label, n, result, overlay))
+
+    if not individual_results:
+        print("  No fingerprints detected. Pipeline cannot continue.")
+        doc.close()
+        return
+
+    # -- VLM evaluates each -------------------------------------------------
+    print("\n[4] VLM evaluation of each fingerprint overlay...")
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    approved = []
+    for i, (label, count, result, overlay_path) in enumerate(individual_results):
+        img = open(overlay_path, "rb").read()
+        prompt = (f"This is a floor plan with walls highlighted in RED "
+                  f"(pattern: '{label}', {count} walls).\n\n"
+                  f"Score 1-10, should this be included?\n"
+                  f'Return JSON: {{"score": <1-10>, "include": <true/false>, '
+                  f'"reason": "<1 sentence>"}}')
         try:
-            seeds = vlm_identify_wall(page, dpi=150)
+            eval_result = _vlm_call(client, img, prompt, max_tokens=256)
+        except Exception as e:
+            print(f"    VLM eval failed for fp{i+1}: {e}")
+            eval_result = {"score": 0, "include": False,
+                           "reason": f"VLM eval error: {e}"}
+        # Save eval
+        with open(f"{out_dir}/fp{i+1}_eval.json", "w") as f:
+            json.dump(eval_result, f, indent=2)
+        include = eval_result.get("include", False)
+        score = eval_result.get("score", 0)
+        reason = eval_result.get("reason", "")
+        print(f"    fp{i+1} ({label}): score={score}, "
+              f"include={include}, reason={reason}")
+        if include:
+            approved.append(result)
 
-            # Snap VLM seed boxes to actual wall vectors
-            seeds = _refine_seeds(seeds, drawings)
+    if not approved:
+        # Fallback: use top-scoring
+        print("  No fingerprints approved by VLM — using top result as fallback")
+        approved = [individual_results[0][2]] if individual_results else []
 
-            # Save debug overlay
-            save_debug_vlm_seed(pdf_path, seeds, output_path=debug_path)
-            print(f"  Debug overlay saved: {debug_path}")
+    # -- Merge approved results ---------------------------------------------
+    print(f"\n[5] Merging {len(approved)} approved result(s)...")
+    merged_edge_idx = set()
+    merged_edges = []
+    merged_hatch_idx = set()
+    merged_hatches = []
+    merged_fill_idx = set()
+    merged_fills = []
+    merged_secondary = set()
 
-            # Try each seed until one yields a valid fingerprint
-            print("\n[3/5] Extracting wall fingerprint from seed region(s)...")
-            for si, (seed_rect, vlm_hints) in enumerate(seeds):
-                try:
-                    print(f"  Trying seed {si + 1}/{len(seeds)}: {seed_rect}")
-                    fp = extract_fingerprint(drawings, seed_rect, vlm_hints)
-                    print(f"  Wall style   : {fp['wall_style']}")
-                    if fp['edge_color']:
-                        print(f"  Edge colour  : "
-                              f"{tuple(round(c, 4) for c in fp['edge_color'])}")
-                        print(f"  Edge width   : {fp['edge_width']}")
-                    if fp.get('fill_color'):
-                        print(f"  Fill colour  : {fp['fill_color']}")
-                    if fp["secondary_edge_widths"]:
-                        print(f"  Secondary widths: "
-                              f"{fp['secondary_edge_widths']}")
-                    if fp["hatch"]:
-                        print(f"  Hatch colour : "
-                              f"{tuple(round(c, 4) for c in fp['hatch']['color'])}")
-                        print(f"  Hatch width  : {fp['hatch']['width']:.4f}")
-                        print(f"  Hatch angle  : {fp['hatch']['angle']}deg")
-                    break  # got a fingerprint
-                except ValueError as e:
-                    print(f"    seed {si + 1} failed: {e}")
-                    if si == len(seeds) - 1:
-                        raise  # all seeds failed, propagate to outer handler
-            break  # VLM + fingerprint succeeded
-        except ValueError as e:
-            print(f"  {e}")
-            if attempt == MAX_VLM_ATTEMPTS:
-                print("\n  VLM-free fallback: auto-detecting wall pattern...")
-                fp = _fallback_fingerprint(drawings)
-                if fp:
-                    print(f"  Wall style   : {fp['wall_style']}")
-                    if fp.get('fill_color'):
-                        print(f"  Fill colour  : {fp['fill_color']}")
-                    if fp.get('edge_color'):
-                        print(f"  Edge colour  : "
-                              f"{tuple(round(c, 4) for c in fp['edge_color'])}")
-                        print(f"  Edge width   : {fp['edge_width']}")
-                else:
-                    print("  FAILED — could not detect wall pattern.")
-                    doc.close()
-                    return
+    for result in approved:
+        for idx, d in result["edges"]:
+            if idx not in merged_edge_idx:
+                merged_edge_idx.add(idx)
+                merged_edges.append((idx, d))
+        for idx, d in result["hatches"]:
+            if idx not in merged_hatch_idx:
+                merged_hatch_idx.add(idx)
+                merged_hatches.append((idx, d))
+        for idx, d in result["fills"]:
+            if idx not in merged_fill_idx:
+                merged_fill_idx.add(idx)
+                merged_fills.append((idx, d))
+        merged_secondary.update(result["secondary_indices"])
 
-    # -- Step 4: global match -----------------------------------------------
-    print("\n[4/5] Matching fingerprint across all vectors...")
-    wall_result = find_all_walls(drawings, fp)
-    n_edges = len(wall_result["edges"])
-    n_hatches = len(wall_result["hatches"])
-    n_fills = len(wall_result.get("fills", []))
-    print(f"  Edge drawings found    : {n_edges}")
-    print(f"  Hatch drawings found   : {n_hatches}")
-    print(f"  Fill drawings found    : {n_fills}")
-    print(f"  Significant components : {len(wall_result['components'])}")
+    merged = {
+        "edges": merged_edges,
+        "hatches": merged_hatches,
+        "fills": merged_fills,
+        "secondary_indices": merged_secondary,
+        "components": [],
+    }
 
-    # -- Step 5: overlay ----------------------------------------------------
-    print("\n[5/5] Generating overlay image...")
-    out = generate_overlay(pdf_path, wall_result, output_path=overlay_path)
-    print(f"  Saved to: {out}")
-
-    # -- Summary ------------------------------------------------------------
-    e_items = sum(len(d["items"]) for _, d in wall_result["edges"])
-    h_items = sum(len(d["items"]) for _, d in wall_result["hatches"])
-    f_items = sum(len(d["items"]) for _, d in wall_result.get("fills", []))
+    n_edges = len(merged["edges"])
+    n_hatches = len(merged["hatches"])
+    n_fills = len(merged["fills"])
     total_wall = n_edges + n_hatches + n_fills
+    print(f"  Merged: {n_edges} edges, {n_hatches} hatches, {n_fills} fills "
+          f"({total_wall} total)")
+
+    # -- Generate final overlay ---------------------------------------------
+    print("\n[6] Generating final overlay...")
+    final_path = f"{out_dir}/final_overlay.png"
+    generate_overlay(pdf_path, merged, output_path=final_path)
+    print(f"  Saved to: {final_path}")
+
+    # -- Save summary.json --------------------------------------------------
+    summary = {
+        "pdf": pdf_path,
+        "basename": basename,
+        "pt_per_inch": pt_per_inch,
+        "thresholds": thresholds,
+        "fingerprints_detected": len(fps),
+        "fingerprints_evaluated": len(individual_results),
+        "fingerprints_approved": len(approved),
+        "total_wall_drawings": total_wall,
+        "edge_drawings": n_edges,
+        "hatch_drawings": n_hatches,
+        "fill_drawings": n_fills,
+        "total_drawings_in_pdf": len(drawings),
+        "wall_coverage_pct": round(
+            total_wall / max(len(drawings), 1) * 100, 1),
+    }
+    summary_path = f"{out_dir}/summary.json"
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    print(f"  Summary saved to: {summary_path}")
+
+    # -- Console summary ----------------------------------------------------
     print("\n" + "-" * 60)
     print("  SUMMARY")
     print("-" * 60)
-    print(f"  Wall style detected     : {fp['wall_style']}")
+    print(f"  Scale (pt/inch)         : {pt_per_inch}")
+    print(f"  Fingerprints detected   : {len(fps)}")
+    print(f"  Fingerprints approved   : {len(approved)}")
     print(f"  Total drawings in PDF   : {len(drawings)}")
-    print(f"  Wall edge drawings      : {n_edges}  ({e_items} segments)")
-    print(f"  Wall hatch drawings     : {n_hatches}  ({h_items} segments)")
-    print(f"  Wall fill drawings      : {n_fills}  ({f_items} items)")
+    print(f"  Wall edge drawings      : {n_edges}")
+    print(f"  Wall hatch drawings     : {n_hatches}")
+    print(f"  Wall fill drawings      : {n_fills}")
     print(f"  Total wall drawings     : {total_wall}")
     print(f"  Wall vector coverage    : "
-          f"{total_wall / len(drawings) * 100:.1f}%")
-    if wall_result["secondary_indices"]:
-        print(f"  Secondary-width drawings: "
-              f"{len(wall_result['secondary_indices'])}")
+          f"{total_wall / max(len(drawings), 1) * 100:.1f}%")
+    if merged_secondary:
+        print(f"  Secondary-width drawings: {len(merged_secondary)}")
 
     doc.close()
     print("\nDone!\n")

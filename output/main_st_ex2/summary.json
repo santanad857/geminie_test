@@ -1,0 +1,26 @@
+{
+  "pdf": "main_st_ex2.pdf",
+  "pt_per_inch": 0.6,
+  "total_drawings": 3917,
+  "valid_after_prefilter": 3782,
+  "patterns_enumerated": 5,
+  "patterns_evaluated": 5,
+  "patterns_approved": 2,
+  "approved_labels": [
+    "stroke(0.00,0.00,0.00) w=0.5 x3359",
+    "fill(0.00,0.00,0.00) x180"
+  ],
+  "wall_drawings_before_unification": 3439,
+  "wall_drawings_final": 3367,
+  "fill_drawings": 161,
+  "stroke_drawings": 3206,
+  "wall_coverage_pct": 86.0,
+  "thresholds": {
+    "min_thickness": 1.2,
+    "max_thickness": 8.4,
+    "min_length": 2.4,
+    "connectivity_eps": 1.8,
+    "bridge_eps": 10.8,
+    "max_bridge_gap": 864.0
+  }
+}

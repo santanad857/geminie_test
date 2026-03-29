@@ -1,0 +1,9 @@
+{
+  "is_walls": true,
+  "wall_pct": 90,
+  "false_positive_categories": [
+    "door swings",
+    "text"
+  ],
+  "reasoning": "The red hatching primarily represents walls, as they define the structural layout of rooms. Some text and door swings are also highlighted in red, but the majority of red elements are walls, making up approximately 90% of the highlighted areas."
+}

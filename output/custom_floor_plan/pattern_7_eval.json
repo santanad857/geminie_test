@@ -1,0 +1,8 @@
+{
+  "is_walls": false,
+  "wall_pct": 0,
+  "false_positive_categories": [
+    "fixtures"
+  ],
+  "reasoning": "The red elements highlighted on the plan are fixtures like sinks and range hood, not walls. Walls would be long and define room boundaries, but these elements are small and located within rooms."
+}

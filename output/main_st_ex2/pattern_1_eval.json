@@ -1,0 +1,10 @@
+{
+  "is_walls": true,
+  "wall_pct": 90,
+  "false_positive_categories": [
+    "text",
+    "dimension lines",
+    "door swings"
+  ],
+  "reasoning": "The red elements primarily outline architectural walls, but additional elements like dimension lines, text, and door swings are also highlighted in red, constituting a minority of non-wall items."
+}
