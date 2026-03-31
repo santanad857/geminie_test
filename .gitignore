@@ -27,3 +27,7 @@ debug_vlm/
 # IDE
 .vscode/
 .idea/
+.claude/
+
+# Generated output
+output/

@@ -1,4 +1,13 @@
 PyMuPDF
+anthropic
+Pillow
+opencv-python
 numpy
-shapely
+scipy
 networkx
+shapely
+rtree
+fastapi
+uvicorn
+python-multipart
+
