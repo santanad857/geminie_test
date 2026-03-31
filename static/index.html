@@ -9,43 +9,43 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     /* ================================================================
-       DESIGN SYSTEM
+       DESIGN SYSTEM — Clean Professional Light Theme
        ================================================================ */
     :root {
-      --bg-primary: #0a0a0f;
-      --bg-secondary: #12121a;
-      --bg-card: #16161f;
-      --bg-elevated: #1c1c28;
-      --bg-hover: #22222f;
+      --bg-primary: #f5f6f8;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-elevated: #f0f1f3;
+      --bg-hover: #e8e9ec;
 
-      --border-subtle: rgba(255, 255, 255, 0.06);
-      --border-default: rgba(255, 255, 255, 0.1);
-      --border-focus: rgba(20, 184, 166, 0.5);
+      --border-subtle: #e2e4e8;
+      --border-default: #d0d3d9;
+      --border-focus: rgba(37, 99, 235, 0.5);
 
-      --text-primary: #f0f0f5;
-      --text-secondary: #8a8a9a;
-      --text-tertiary: #5a5a6a;
+      --text-primary: #1a1d23;
+      --text-secondary: #5f6673;
+      --text-tertiary: #8c919c;
 
-      --accent: #14b8a6;
-      --accent-hover: #2dd4bf;
-      --accent-soft: rgba(20, 184, 166, 0.12);
-      --accent-glow: rgba(20, 184, 166, 0.25);
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-soft: rgba(37, 99, 235, 0.08);
+      --accent-glow: rgba(37, 99, 235, 0.15);
 
-      --success: #22c55e;
-      --success-soft: rgba(34, 197, 94, 0.12);
-      --error: #ef4444;
-      --error-soft: rgba(239, 68, 68, 0.12);
-      --warning: #f59e0b;
+      --success: #16a34a;
+      --success-soft: rgba(22, 163, 74, 0.08);
+      --error: #dc2626;
+      --error-soft: rgba(220, 38, 38, 0.08);
+      --warning: #d97706;
 
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
       --radius-xl: 20px;
 
-      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
-      --shadow-glow: 0 0 40px rgba(20, 184, 166, 0.15);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
+      --shadow-glow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 
       --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
       --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -86,7 +86,6 @@
       padding: 16px 32px;
       border-bottom: 1px solid var(--border-subtle);
       background: var(--bg-secondary);
-      backdrop-filter: blur(20px);
       position: sticky;
       top: 0;
       z-index: 100;
@@ -152,7 +151,7 @@
     }
 
     /* ================================================================
-       VIEWS — shared wrapper
+       VIEWS -- shared wrapper
        ================================================================ */
     .view {
       display: none;
@@ -169,9 +168,9 @@
     }
 
     @keyframes successPulse {
-      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
-      70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+      0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.3); }
+      70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
     }
 
     .pipeline-step.just-completed .step-indicator {
@@ -416,7 +415,7 @@
     .progress-bar-container {
       width: 100%;
       height: 3px;
-      background: var(--bg-card);
+      background: var(--bg-elevated);
       border-radius: 2px;
       margin-bottom: 28px;
       overflow: hidden;
@@ -474,18 +473,18 @@
     }
 
     .pipeline-step.active {
-      background: var(--bg-elevated);
+      background: var(--accent-soft);
       border-color: var(--accent);
-      box-shadow: 0 0 20px rgba(20, 184, 166, 0.08);
+      box-shadow: 0 0 20px rgba(37, 99, 235, 0.06);
     }
 
     .pipeline-step.completed {
-      border-color: rgba(34, 197, 94, 0.15);
-      background: rgba(34, 197, 94, 0.03);
+      border-color: rgba(22, 163, 74, 0.2);
+      background: rgba(22, 163, 74, 0.03);
     }
 
     .pipeline-step.error {
-      border-color: rgba(239, 68, 68, 0.3);
+      border-color: rgba(220, 38, 38, 0.3);
       background: var(--error-soft);
     }
 
@@ -585,7 +584,7 @@
 
     .btn-secondary {
       padding: 10px 18px;
-      background: var(--bg-elevated);
+      background: var(--bg-card);
       color: var(--text-primary);
       border: 1px solid var(--border-default);
       border-radius: var(--radius-md);
@@ -633,10 +632,7 @@
       font-weight: 700;
       letter-spacing: -0.5px;
       font-variant-numeric: tabular-nums;
-      background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: var(--text-primary);
     }
 
     .stat-label {
@@ -686,7 +682,7 @@
     }
 
     .viewer-tab.active {
-      background: var(--bg-elevated);
+      background: var(--bg-card);
       color: var(--text-primary);
       box-shadow: var(--shadow-sm);
     }
@@ -738,14 +734,14 @@
       height: 600px;
       overflow: hidden;
       cursor: grab;
-      background:
-        linear-gradient(45deg, #0e0e16 25%, transparent 25%),
-        linear-gradient(-45deg, #0e0e16 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #0e0e16 75%),
-        linear-gradient(-45deg, transparent 75%, #0e0e16 75%);
+      background-color: #f0f1f3;
+      background-image:
+        linear-gradient(45deg, #e4e5e8 25%, transparent 25%),
+        linear-gradient(-45deg, #e4e5e8 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e4e5e8 75%),
+        linear-gradient(-45deg, transparent 75%, #e4e5e8 75%);
       background-size: 20px 20px;
       background-position: 0 0, 0 10px, 10px -10px, -10px 0;
-      background-color: #111119;
     }
 
     .viewer-canvas:active { cursor: grabbing; }
@@ -791,33 +787,350 @@
       border-radius: 50%;
       background: var(--accent);
       cursor: pointer;
-      border: 2px solid var(--bg-elevated);
+      border: 2px solid var(--bg-card);
     }
 
     /* ================================================================
-       AMBIENT EFFECTS
+       DEMO GALLERY VIEW
        ================================================================ */
-    .app::before {
-      content: '';
-      position: fixed;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(ellipse at 30% 20%, rgba(20, 184, 166, 0.04) 0%, transparent 50%),
-                  radial-gradient(ellipse at 70% 80%, rgba(20, 184, 166, 0.03) 0%, transparent 50%);
-      pointer-events: none;
-      z-index: 0;
+    .demo-view.active {
+      display: flex !important;
+      flex-direction: column;
     }
 
-    header, main { position: relative; z-index: 1; }
+    .demo-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .demo-top-bar h1 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .demo-back-btn {
+      padding: 8px 18px;
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all var(--transition-fast);
+    }
+
+    .demo-back-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .demo-plan-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .demo-plan-tab {
+      padding: 7px 16px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      border: 1px solid var(--border-default);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      transition: all var(--transition-fast);
+    }
+
+    .demo-plan-tab:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .demo-plan-tab.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .demo-body {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* Left sidebar */
+    .demo-sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .demo-quantities {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+
+    .demo-quantities-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-tertiary);
+      margin-bottom: 16px;
+    }
+
+    .demo-qty-group {
+      margin-bottom: 16px;
+    }
+
+    .demo-qty-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .demo-qty-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-tertiary);
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .demo-qty-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+    }
+
+    .demo-qty-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .demo-qty-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .demo-qty-value.highlight {
+      color: var(--accent);
+      font-size: 16px;
+    }
+
+    .demo-view-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+    }
+
+    .demo-view-toggle-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-tertiary);
+      margin-bottom: 10px;
+    }
+
+    .demo-toggle-group {
+      display: flex;
+      gap: 4px;
+      background: var(--bg-primary);
+      border-radius: 6px;
+      padding: 3px;
+    }
+
+    .demo-toggle-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      background: transparent;
+      color: var(--text-secondary);
+      transition: all var(--transition-fast);
+    }
+
+    .demo-toggle-btn.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .demo-toggle-btn:hover:not(.active) {
+      color: var(--text-primary);
+    }
+
+    /* Checkbox rows */
+    .demo-checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+      user-select: none;
+    }
+
+    .demo-checkbox-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .demo-checkbox-row input[type="checkbox"]:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .demo-checkbox-mark { display: none; }
+
+    /* Main area (left) */
+    .demo-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .demo-viewer-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-bottom: none;
+      border-radius: var(--radius-md) var(--radius-md) 0 0;
+    }
+
+    .demo-zoom-btn {
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+      font-size: 16px;
+      font-weight: 500;
+      line-height: 1;
+    }
+
+    .demo-zoom-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      border-color: var(--border-default);
+    }
+
+    .demo-zoom-label {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+      min-width: 44px;
+      text-align: center;
+    }
+
+    .demo-viewer-canvas {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      cursor: grab;
+      background-color: #f0f1f3;
+      background-image:
+        linear-gradient(45deg, #e4e5e8 25%, transparent 25%),
+        linear-gradient(-45deg, #e4e5e8 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e4e5e8 75%),
+        linear-gradient(-45deg, transparent 75%, #e4e5e8 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+      border: 1px solid var(--border-subtle);
+      border-top: none;
+      border-radius: 0 0 var(--radius-md) var(--radius-md);
+      min-height: 500px;
+    }
+
+    .demo-viewer-canvas:active { cursor: grabbing; }
+
+    .demo-viewer-canvas img {
+      position: absolute;
+      transform-origin: 0 0;
+      user-select: none;
+      -webkit-user-drag: none;
+      image-rendering: auto;
+      max-width: none;
+    }
+
+    .demo-nav-bar {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 16px;
+    }
+
+    .demo-nav-btn {
+      padding: 10px 24px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all var(--transition-fast);
+    }
+
+    .demo-nav-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-focus);
+    }
+
+    .demo-nav-btn.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .demo-nav-btn.primary:hover {
+      background: var(--accent-hover);
+    }
 
     /* ================================================================
        HISTORY PANEL
        ================================================================ */
     .history-toggle {
       padding: 8px 14px;
-      background: var(--bg-elevated);
+      background: var(--bg-card);
       color: var(--text-secondary);
       border: 1px solid var(--border-default);
       border-radius: var(--radius-sm);
@@ -863,7 +1176,7 @@
       border-left: 1px solid var(--border-subtle);
       z-index: 200;
       flex-direction: column;
-      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.1);
       animation: slideIn var(--transition-base) ease;
     }
 
@@ -949,7 +1262,7 @@
       width: 56px;
       height: 56px;
       border-radius: 6px;
-      background: var(--bg-card);
+      background: var(--bg-elevated);
       overflow: hidden;
       flex-shrink: 0;
       border: 1px solid var(--border-subtle);
@@ -1034,6 +1347,8 @@
       .drop-zone { padding: 40px 24px; }
       .stats-bar { grid-template-columns: repeat(2, 1fr); }
       .viewer-canvas { height: 400px; }
+      .demo-body { flex-direction: column; }
+      .demo-sidebar { width: 100%; }
     }
   </style>
 </head>
@@ -1080,6 +1395,103 @@
          ============================================================ -->
     <main>
 
+      <!-- DEMO GALLERY VIEW -->
+      <div class="view demo-view" id="demoView" style="max-width:1400px">
+        <!-- Top bar: title + back button -->
+        <div class="demo-top-bar">
+          <h1>Demo Gallery</h1>
+          <button class="demo-back-btn" id="demoBackBtn">&larr; Upload custom</button>
+        </div>
+
+        <!-- Plan selector tabs -->
+        <div class="demo-plan-tabs" id="demoPlanTabs"></div>
+
+        <!-- Body: main viewer + right sidebar -->
+        <div class="demo-body">
+          <!-- Left main viewer area -->
+          <div class="demo-main">
+            <!-- Toolbar with zoom controls -->
+            <div class="demo-viewer-toolbar">
+              <button class="demo-zoom-btn" id="demoZoomOut" title="Zoom out">&minus;</button>
+              <span class="demo-zoom-label" id="demoZoomLabel">100%</span>
+              <button class="demo-zoom-btn" id="demoZoomIn" title="Zoom in">+</button>
+              <button class="demo-zoom-btn" id="demoZoomFit" title="Fit to view" style="font-size:12px;">Fit</button>
+            </div>
+
+            <!-- Canvas with zoomable/pannable image -->
+            <div class="demo-viewer-canvas" id="demoCanvas">
+              <img id="demoImage" src="" alt="Floor plan" />
+            </div>
+          </div>
+
+          <!-- Right sidebar -->
+          <div class="demo-sidebar">
+            <!-- Layer checkboxes -->
+            <div class="demo-quantities">
+              <div class="demo-quantities-title">Layers</div>
+              <label class="demo-checkbox-row">
+                <input type="checkbox" id="chkWallOverlay" checked>
+                <span class="demo-checkbox-mark"></span>
+                <span>Wall Overlay</span>
+              </label>
+              <label class="demo-checkbox-row">
+                <input type="checkbox" id="chkRoomOverlay" disabled>
+                <span class="demo-checkbox-mark"></span>
+                <span style="color:var(--text-tertiary)">Room Overlay <em>(coming soon)</em></span>
+              </label>
+              <label class="demo-checkbox-row">
+                <input type="checkbox" id="chkOriginalPdf">
+                <span class="demo-checkbox-mark"></span>
+                <span>Original PDF</span>
+              </label>
+            </div>
+
+            <!-- Quantities -->
+            <div class="demo-quantities">
+              <div class="demo-quantities-title">Quantities</div>
+
+              <div class="demo-qty-group">
+                <div class="demo-qty-group-label">Walls</div>
+                <div class="demo-qty-row">
+                  <span class="demo-qty-label">Total Wall LF</span>
+                  <span class="demo-qty-value highlight">847 LF</span>
+                </div>
+                <div class="demo-qty-row">
+                  <span class="demo-qty-label">Exterior Wall LF</span>
+                  <span class="demo-qty-value">312 LF</span>
+                </div>
+                <div class="demo-qty-row">
+                  <span class="demo-qty-label">Interior Wall LF</span>
+                  <span class="demo-qty-value">535 LF</span>
+                </div>
+              </div>
+
+              <div class="demo-qty-group">
+                <div class="demo-qty-group-label">Rooms</div>
+                <div class="demo-qty-row">
+                  <span class="demo-qty-label">Total Room Area</span>
+                  <span class="demo-qty-value highlight">12,450 SF</span>
+                </div>
+                <div class="demo-qty-row">
+                  <span class="demo-qty-label">Room Count</span>
+                  <span class="demo-qty-value">24</span>
+                </div>
+                <div class="demo-qty-row">
+                  <span class="demo-qty-label">Average Room Size</span>
+                  <span class="demo-qty-value">519 SF</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom nav -->
+        <div class="demo-nav-bar">
+          <button class="demo-nav-btn" id="demoPrev">&larr; Previous</button>
+          <button class="demo-nav-btn primary" id="demoNext">Next &rarr;</button>
+        </div>
+      </div>
+
       <!-- UPLOAD VIEW -->
       <div class="view upload-view active" id="uploadView">
         <h1 class="upload-heading">Analyze Floor Plan</h1>
@@ -1096,6 +1508,14 @@
           <div class="drop-label">Drop your PDF here or <span>browse files</span></div>
           <div class="drop-hint">Supports architectural floor plan PDFs</div>
           <input type="file" id="fileInput" accept=".pdf">
+        </div>
+
+        <div style="margin-top:24px;">
+          <button id="viewDemoBtn" style="background:none;border:1px solid var(--border-default);color:var(--accent);padding:10px 24px;border-radius:var(--radius-md);cursor:pointer;font-size:14px;font-family:var(--font-sans);transition:all var(--transition-fast);"
+            onmouseover="this.style.borderColor='var(--accent)';this.style.background='var(--accent-soft)'"
+            onmouseout="this.style.borderColor='var(--border-default)';this.style.background='none'">
+            View Demo Results &rarr;
+          </button>
         </div>
 
         <div class="file-info" id="fileInfo">
@@ -1298,6 +1718,7 @@
     const uploadView = $('uploadView');
     const processingView = $('processingView');
     const resultsView = $('resultsView');
+    const demoView = $('demoView');
     const dropZone = $('dropZone');
     const fileInput = $('fileInput');
     const fileInfo = $('fileInfo');
@@ -1320,7 +1741,7 @@
     // View transitions
     // ---------------------------------------------------------------
     function showView(viewEl) {
-      [uploadView, processingView, resultsView].forEach(v => v.classList.remove('active'));
+      [uploadView, processingView, resultsView, demoView].forEach(v => v.classList.remove('active'));
       viewEl.classList.add('active');
     }
 
@@ -1559,7 +1980,7 @@
     }
 
     // ---------------------------------------------------------------
-    // Image viewer — zoom & pan
+    // Image viewer -- zoom & pan
     // ---------------------------------------------------------------
     function updateTransform() {
       const transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
@@ -1821,6 +2242,189 @@
 
     // Load history on page load
     loadHistory();
+
+    // ---------------------------------------------------------------
+    // Demo Gallery
+    // ---------------------------------------------------------------
+    let demoPlans = [];
+    let demoIndex = 0;
+
+    // Demo viewer state (separate from results viewer)
+    const demoState = {
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      isPanning: false,
+      panStartX: 0,
+      panStartY: 0,
+    };
+
+    const demoCanvas = $('demoCanvas');
+    const demoImage = $('demoImage');
+    const demoZoomLabel = $('demoZoomLabel');
+
+    function demoUpdateTransform() {
+      demoImage.style.transform = `translate(${demoState.panX}px, ${demoState.panY}px) scale(${demoState.zoom})`;
+      demoZoomLabel.textContent = Math.round(demoState.zoom * 100) + '%';
+    }
+
+    function demoFitToView() {
+      const rect = demoCanvas.getBoundingClientRect();
+      const img = demoImage;
+      if (!img.naturalWidth || !rect.width) return;
+
+      const scaleX = (rect.width - 40) / img.naturalWidth;
+      const scaleY = (rect.height - 40) / img.naturalHeight;
+      demoState.zoom = Math.min(scaleX, scaleY, 1);
+
+      demoState.panX = (rect.width - img.naturalWidth * demoState.zoom) / 2;
+      demoState.panY = (rect.height - img.naturalHeight * demoState.zoom) / 2;
+
+      demoUpdateTransform();
+    }
+
+    function demoZoomAt(cx, cy, newZoom) {
+      newZoom = Math.max(0.05, Math.min(newZoom, 10));
+      const ratio = newZoom / demoState.zoom;
+      demoState.panX = cx - ratio * (cx - demoState.panX);
+      demoState.panY = cy - ratio * (cy - demoState.panY);
+      demoState.zoom = newZoom;
+      demoUpdateTransform();
+    }
+
+    // Zoom buttons
+    $('demoZoomIn').addEventListener('click', () => {
+      const rect = demoCanvas.getBoundingClientRect();
+      demoZoomAt(rect.width / 2, rect.height / 2, demoState.zoom * 1.25);
+    });
+
+    $('demoZoomOut').addEventListener('click', () => {
+      const rect = demoCanvas.getBoundingClientRect();
+      demoZoomAt(rect.width / 2, rect.height / 2, demoState.zoom / 1.25);
+    });
+
+    $('demoZoomFit').addEventListener('click', demoFitToView);
+
+    // Mouse wheel zoom on demo canvas
+    demoCanvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = demoCanvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      demoZoomAt(cx, cy, demoState.zoom * factor);
+    }, { passive: false });
+
+    // Pan on demo canvas
+    demoCanvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      demoState.isPanning = true;
+      demoState.panStartX = e.clientX - demoState.panX;
+      demoState.panStartY = e.clientY - demoState.panY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!demoState.isPanning) return;
+      demoState.panX = e.clientX - demoState.panStartX;
+      demoState.panY = e.clientY - demoState.panStartY;
+      demoUpdateTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      demoState.isPanning = false;
+    });
+
+    // Touch support for demo canvas
+    let demoTouchStartX, demoTouchStartY;
+
+    demoCanvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        demoState.isPanning = true;
+        demoTouchStartX = e.touches[0].clientX - demoState.panX;
+        demoTouchStartY = e.touches[0].clientY - demoState.panY;
+      }
+    }, { passive: true });
+
+    demoCanvas.addEventListener('touchmove', (e) => {
+      if (!demoState.isPanning || e.touches.length !== 1) return;
+      e.preventDefault();
+      demoState.panX = e.touches[0].clientX - demoTouchStartX;
+      demoState.panY = e.touches[0].clientY - demoTouchStartY;
+      demoUpdateTransform();
+    }, { passive: false });
+
+    demoCanvas.addEventListener('touchend', () => {
+      demoState.isPanning = false;
+    });
+
+    // Load demo
+    $('viewDemoBtn').addEventListener('click', async () => {
+      const res = await fetch('/api/demo/plans');
+      demoPlans = await res.json();
+      demoIndex = 0;
+      chkWall.checked = true;
+      chkOriginal.checked = false;
+      renderDemoTabs();
+      loadDemoPlan();
+      showView(demoView);
+    });
+
+    $('demoBackBtn').addEventListener('click', () => showView(uploadView));
+
+    $('demoNext').addEventListener('click', () => {
+      if (demoPlans.length === 0) return;
+      demoIndex = (demoIndex + 1) % demoPlans.length;
+      renderDemoTabs();
+      loadDemoPlan();
+    });
+
+    $('demoPrev').addEventListener('click', () => {
+      if (demoPlans.length === 0) return;
+      demoIndex = (demoIndex - 1 + demoPlans.length) % demoPlans.length;
+      renderDemoTabs();
+      loadDemoPlan();
+    });
+
+    // Checkbox-driven layer selection
+    const chkWall = $('chkWallOverlay');
+    const chkRoom = $('chkRoomOverlay');
+    const chkOriginal = $('chkOriginalPdf');
+
+    chkWall.addEventListener('change', loadDemoPlan);
+    chkOriginal.addEventListener('change', loadDemoPlan);
+
+    function renderDemoTabs() {
+      const container = $('demoPlanTabs');
+      container.innerHTML = '';
+      demoPlans.forEach((plan, i) => {
+        const btn = document.createElement('button');
+        btn.textContent = plan.name;
+        btn.className = 'demo-plan-tab' + (i === demoIndex ? ' active' : '');
+        btn.addEventListener('click', () => {
+          demoIndex = i;
+          renderDemoTabs();
+          loadDemoPlan();
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    function loadDemoPlan() {
+      if (demoPlans.length === 0) return;
+      const plan = demoPlans[demoIndex];
+      demoImage.src = '';
+
+      // Priority: wall overlay if checked, else original, else blank
+      if (chkWall.checked) {
+        demoImage.src = `/api/demo/overlay/${plan.id}`;
+      } else if (chkOriginal.checked) {
+        demoImage.src = `/api/demo/original/${plan.id}`;
+      }
+      // Fit to view once loaded
+      demoImage.onload = () => {
+        demoFitToView();
+      };
+    }
 
     // Refresh history after each completed pipeline run
     const _origShowResults = showResults;

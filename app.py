@@ -415,3 +415,73 @@ async def delete_history_item(job_id: str):
         shutil.rmtree(job_dir)
     jobs.pop(job_id, None)
     return {"deleted": job_id}
+
+
+# ---------------------------------------------------------------------------
+# Demo gallery — pre-computed wall overlays
+# ---------------------------------------------------------------------------
+
+DEMO_PLANS = [
+    {
+        "id": "main_st_ex",
+        "name": "Main St (Existing Conditions)",
+        "overlay": "output/main_st_ex/step5/candidate_1_wall_overlay.png",
+        "pdf": "example_plans/main_st_ex.pdf",
+        "candidate": 1,
+        "notes": "Polygon-based walls — clean passthrough",
+    },
+    {
+        "id": "fmoc",
+        "name": "FMOC_A — 50% CD",
+        "overlay": "output/2026.01.29_-_FMOC_A_-_50%_CD_copy/step5_fixed3/candidate_1_wall_overlay.png",
+        "pdf": "example_plans/2026.01.29 - FMOC_A - 50% CD copy.pdf",
+        "candidate": 1,
+        "notes": "Line-based walls — 4 styles, tight thickness filter",
+    },
+]
+
+
+@app.get("/api/demo/plans")
+async def list_demo_plans():
+    """Return available demo plans with overlay availability."""
+    result = []
+    for plan in DEMO_PLANS:
+        result.append({
+            "id": plan["id"],
+            "name": plan["name"],
+            "notes": plan["notes"],
+            "has_overlay": Path(plan["overlay"]).exists(),
+        })
+    return result
+
+
+@app.get("/api/demo/overlay/{plan_id}")
+async def get_demo_overlay(plan_id: str):
+    """Serve a pre-computed wall overlay image."""
+    for plan in DEMO_PLANS:
+        if plan["id"] == plan_id:
+            overlay_path = Path(plan["overlay"])
+            if overlay_path.exists():
+                return FileResponse(overlay_path, media_type="image/png")
+            raise HTTPException(404, f"Overlay not found for {plan_id}")
+    raise HTTPException(404, f"Unknown plan: {plan_id}")
+
+
+@app.get("/api/demo/original/{plan_id}")
+async def get_demo_original(plan_id: str):
+    """Render page 1 of the original PDF as PNG for comparison."""
+    for plan in DEMO_PLANS:
+        if plan["id"] == plan_id:
+            pdf_path = Path(plan["pdf"])
+            if not pdf_path.exists():
+                raise HTTPException(404, f"PDF not found for {plan_id}")
+            doc = fitz.open(str(pdf_path))
+            page = doc[0]
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            png = pix.tobytes("png")
+            doc.close()
+            return StreamingResponse(
+                iter([png]), media_type="image/png",
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+    raise HTTPException(404, f"Unknown plan: {plan_id}")
