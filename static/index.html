@@ -1097,6 +1097,47 @@
       margin-top: 16px;
     }
 
+    /* Room editor */
+    .room-editor-btn {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: var(--transition-fast);
+    }
+    .room-editor-btn:hover { background: var(--bg-hover); }
+    .room-editor-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .room-editor-btn.primary:hover { background: var(--accent-hover); }
+    .room-editor-btn.secondary { font-size: 11px; padding: 5px 8px; }
+    .room-editor-btn.active { background: var(--error); color: #fff; border-color: var(--error); }
+
+    .room-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .room-list-item .room-swatch {
+      width: 12px; height: 12px;
+      border-radius: 2px;
+      display: inline-block;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .room-list-item button {
+      background: none; border: none; color: var(--error); cursor: pointer; font-size: 11px;
+    }
+
+    .demo-viewer-canvas.drawing-mode { cursor: crosshair !important; }
+    .demo-viewer-canvas.drawing-mode:active { cursor: crosshair !important; }
+
     .demo-nav-btn {
       padding: 10px 24px;
       background: var(--bg-card);
@@ -1421,6 +1462,8 @@
             <!-- Canvas with zoomable/pannable image -->
             <div class="demo-viewer-canvas" id="demoCanvas">
               <img id="demoImage" src="" alt="Floor plan" />
+              <img id="demoWallOverlayImg" src="" alt="Wall overlay" style="position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:none;display:none;" />
+              <svg id="roomSvg" style="position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:none;overflow:visible;"></svg>
             </div>
           </div>
 
@@ -1430,19 +1473,19 @@
             <div class="demo-quantities">
               <div class="demo-quantities-title">Layers</div>
               <label class="demo-checkbox-row">
-                <input type="checkbox" id="chkWallOverlay" checked>
+                <input type="checkbox" id="chkOriginalPdf" checked>
+                <span class="demo-checkbox-mark"></span>
+                <span>Original PDF</span>
+              </label>
+              <label class="demo-checkbox-row">
+                <input type="checkbox" id="chkWallOverlay">
                 <span class="demo-checkbox-mark"></span>
                 <span>Wall Overlay</span>
               </label>
               <label class="demo-checkbox-row">
-                <input type="checkbox" id="chkRoomOverlay" disabled>
+                <input type="checkbox" id="chkRoomOverlay">
                 <span class="demo-checkbox-mark"></span>
-                <span style="color:var(--text-tertiary)">Room Overlay <em>(coming soon)</em></span>
-              </label>
-              <label class="demo-checkbox-row">
-                <input type="checkbox" id="chkOriginalPdf">
-                <span class="demo-checkbox-mark"></span>
-                <span>Original PDF</span>
+                <span>Room Overlay</span>
               </label>
             </div>
 
@@ -1482,6 +1525,27 @@
                 </div>
               </div>
             </div>
+
+            <!-- Room Editor -->
+            <div class="demo-quantities">
+              <div class="demo-quantities-title">Room Editor</div>
+              <button class="room-editor-btn" id="roomEditorToggle">Start Drawing</button>
+              <div id="roomEditorControls" style="display:none;">
+                <div style="margin-top:8px;">
+                  <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Room Name</label>
+                  <input type="text" id="roomNameInput" placeholder="e.g. Kitchen" style="width:100%;padding:6px 8px;border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:13px;font-family:var(--font-sans);">
+                </div>
+                <div style="margin-top:8px;">
+                  <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Color</label>
+                  <input type="color" id="roomColorInput" value="#2563eb" style="width:100%;height:28px;border:1px solid var(--border-default);border-radius:var(--radius-sm);cursor:pointer;">
+                </div>
+                <div style="margin-top:8px;font-size:11px;color:var(--text-tertiary);" id="roomDrawHint">Click on the plan to place points. Double-click to close the polygon.</div>
+                <button class="room-editor-btn secondary" id="roomUndoPoint" style="margin-top:6px;">Undo Last Point</button>
+                <button class="room-editor-btn secondary" id="roomCancelDraw" style="margin-top:4px;">Cancel Room</button>
+              </div>
+              <div id="roomListContainer" style="margin-top:8px;"></div>
+              <button class="room-editor-btn primary" id="roomSaveBtn" style="margin-top:8px;display:none;">Save All Rooms</button>
+            </div>
           </div>
         </div>
 
@@ -1495,7 +1559,7 @@
       <!-- UPLOAD VIEW -->
       <div class="view upload-view active" id="uploadView">
         <h1 class="upload-heading">Analyze Floor Plan</h1>
-        <p class="upload-subheading">Upload an architectural PDF to detect and extract wall geometries</p>
+        <p class="upload-subheading">Upload an architectural PDF to detect and extract measurements</p>
 
         <div class="drop-zone" id="dropZone">
           <div class="drop-icon">
@@ -2264,7 +2328,10 @@
     const demoZoomLabel = $('demoZoomLabel');
 
     function demoUpdateTransform() {
-      demoImage.style.transform = `translate(${demoState.panX}px, ${demoState.panY}px) scale(${demoState.zoom})`;
+      const t = `translate(${demoState.panX}px, ${demoState.panY}px) scale(${demoState.zoom})`;
+      demoImage.style.transform = t;
+      $('demoWallOverlayImg').style.transform = t;
+      $('roomSvg').style.transform = t;
       demoZoomLabel.textContent = Math.round(demoState.zoom * 100) + '%';
     }
 
@@ -2362,8 +2429,8 @@
       const res = await fetch('/api/demo/plans');
       demoPlans = await res.json();
       demoIndex = 0;
-      chkWall.checked = true;
-      chkOriginal.checked = false;
+      chkOriginal.checked = true;
+      chkWall.checked = false;
       renderDemoTabs();
       loadDemoPlan();
       showView(demoView);
@@ -2390,8 +2457,12 @@
     const chkRoom = $('chkRoomOverlay');
     const chkOriginal = $('chkOriginalPdf');
 
-    chkWall.addEventListener('change', loadDemoPlan);
-    chkOriginal.addEventListener('change', loadDemoPlan);
+    chkWall.addEventListener('change', updateDemoLayers);
+    chkOriginal.addEventListener('change', updateDemoLayers);
+    chkRoom.addEventListener('change', () => {
+      const svg = $('roomSvg');
+      svg.style.display = chkRoom.checked ? '' : 'none';
+    });
 
     function renderDemoTabs() {
       const container = $('demoPlanTabs');
@@ -2409,22 +2480,258 @@
       });
     }
 
+    const demoWallOverlayImg = $('demoWallOverlayImg');
+
     function loadDemoPlan() {
       if (demoPlans.length === 0) return;
       const plan = demoPlans[demoIndex];
-      demoImage.src = '';
 
-      // Priority: wall overlay if checked, else original, else blank
-      if (chkWall.checked) {
-        demoImage.src = `/api/demo/overlay/${plan.id}`;
-      } else if (chkOriginal.checked) {
-        demoImage.src = `/api/demo/original/${plan.id}`;
-      }
-      // Fit to view once loaded
+      // Always load original PDF as base image
+      demoImage.src = '';
+      demoWallOverlayImg.src = '';
+      demoImage.src = `/api/demo/original/${plan.id}`;
+      demoWallOverlayImg.src = `/api/demo/overlay/${plan.id}`;
+
       demoImage.onload = () => {
         demoFitToView();
       };
+      updateDemoLayers();
     }
+
+    function updateDemoLayers() {
+      demoImage.style.display = chkOriginal.checked ? '' : 'none';
+      demoWallOverlayImg.style.display = chkWall.checked ? '' : 'none';
+    }
+
+    // ---------------------------------------------------------------
+    // Room Editor
+    // ---------------------------------------------------------------
+    const roomSvg = $('roomSvg');
+    let savedRooms = [];       // Array of { name, color, points: [[x,y],...] }
+    let drawingPoints = [];    // Current polygon being drawn
+    let isDrawingRoom = false;
+
+    // Convert screen coords to image-pixel coords
+    function screenToImage(clientX, clientY) {
+      const rect = demoCanvas.getBoundingClientRect();
+      const sx = clientX - rect.left;
+      const sy = clientY - rect.top;
+      return [
+        (sx - demoState.panX) / demoState.zoom,
+        (sy - demoState.panY) / demoState.zoom,
+      ];
+    }
+
+    function renderRoomSvg() {
+      // Size SVG to image dimensions
+      const w = demoImage.naturalWidth || 4000;
+      const h = demoImage.naturalHeight || 3000;
+      roomSvg.setAttribute('width', w);
+      roomSvg.setAttribute('height', h);
+      roomSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      roomSvg.innerHTML = '';
+
+      // Draw saved rooms
+      savedRooms.forEach((room, idx) => {
+        const pts = room.points.map(p => p.join(',')).join(' ');
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', pts);
+        poly.setAttribute('fill', room.color);
+        poly.setAttribute('fill-opacity', '0.25');
+        poly.setAttribute('stroke', room.color);
+        poly.setAttribute('stroke-width', String(3 / demoState.zoom));
+        poly.setAttribute('stroke-opacity', '0.7');
+        roomSvg.appendChild(poly);
+
+        // Label
+        const cx = room.points.reduce((s, p) => s + p[0], 0) / room.points.length;
+        const cy = room.points.reduce((s, p) => s + p[1], 0) / room.points.length;
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', cx);
+        text.setAttribute('y', cy);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'central');
+        text.setAttribute('fill', room.color);
+        text.setAttribute('font-size', String(Math.max(14, 18 / demoState.zoom)));
+        text.setAttribute('font-weight', '600');
+        text.setAttribute('font-family', 'Inter, sans-serif');
+        text.setAttribute('paint-order', 'stroke');
+        text.setAttribute('stroke', '#fff');
+        text.setAttribute('stroke-width', String(4 / demoState.zoom));
+        text.textContent = room.name;
+        roomSvg.appendChild(text);
+      });
+
+      // Draw current in-progress polygon
+      if (drawingPoints.length > 0) {
+        const color = $('roomColorInput').value;
+        if (drawingPoints.length >= 2) {
+          const pts = drawingPoints.map(p => p.join(',')).join(' ');
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+          poly.setAttribute('points', pts);
+          poly.setAttribute('fill', color);
+          poly.setAttribute('fill-opacity', '0.15');
+          poly.setAttribute('stroke', color);
+          poly.setAttribute('stroke-width', String(2 / demoState.zoom));
+          poly.setAttribute('stroke-dasharray', `${6/demoState.zoom} ${4/demoState.zoom}`);
+          roomSvg.appendChild(poly);
+        }
+        // Draw vertices
+        drawingPoints.forEach(p => {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', p[0]);
+          circle.setAttribute('cy', p[1]);
+          circle.setAttribute('r', String(5 / demoState.zoom));
+          circle.setAttribute('fill', color);
+          circle.setAttribute('stroke', '#fff');
+          circle.setAttribute('stroke-width', String(2 / demoState.zoom));
+          roomSvg.appendChild(circle);
+        });
+      }
+
+      roomSvg.style.display = chkRoom.checked ? '' : 'none';
+    }
+
+    function renderRoomList() {
+      const container = $('roomListContainer');
+      container.innerHTML = '';
+      savedRooms.forEach((room, i) => {
+        const div = document.createElement('div');
+        div.className = 'room-list-item';
+        div.innerHTML = `<span><span class="room-swatch" style="background:${room.color}"></span>${room.name}</span>`;
+        const del = document.createElement('button');
+        del.textContent = 'Delete';
+        del.addEventListener('click', () => {
+          savedRooms.splice(i, 1);
+          renderRoomList();
+          renderRoomSvg();
+          $('roomSaveBtn').style.display = '';
+        });
+        div.appendChild(del);
+        container.appendChild(div);
+      });
+    }
+
+    // Toggle drawing mode
+    $('roomEditorToggle').addEventListener('click', () => {
+      isDrawingRoom = !isDrawingRoom;
+      const btn = $('roomEditorToggle');
+      const controls = $('roomEditorControls');
+      if (isDrawingRoom) {
+        btn.textContent = 'Stop Drawing';
+        btn.classList.add('active');
+        controls.style.display = '';
+        demoCanvas.classList.add('drawing-mode');
+        drawingPoints = [];
+      } else {
+        btn.textContent = 'Start Drawing';
+        btn.classList.remove('active');
+        controls.style.display = 'none';
+        demoCanvas.classList.remove('drawing-mode');
+        drawingPoints = [];
+        renderRoomSvg();
+      }
+    });
+
+    // Click on canvas to place points (only in drawing mode)
+    let lastClickTime = 0;
+    demoCanvas.addEventListener('click', (e) => {
+      if (!isDrawingRoom) return;
+      const now = Date.now();
+      // Ignore second click of a double-click (within 350ms)
+      if (now - lastClickTime < 350) return;
+      lastClickTime = now;
+      const [ix, iy] = screenToImage(e.clientX, e.clientY);
+      drawingPoints.push([Math.round(ix), Math.round(iy)]);
+      renderRoomSvg();
+    });
+
+    // Double-click to close polygon
+    demoCanvas.addEventListener('dblclick', (e) => {
+      if (!isDrawingRoom || drawingPoints.length < 3) return;
+      e.preventDefault();
+      // Remove the extra point added by the first click of the dblclick
+      drawingPoints.pop();
+      if (drawingPoints.length < 3) return;
+      const name = $('roomNameInput').value.trim() || `Room ${savedRooms.length + 1}`;
+      const color = $('roomColorInput').value;
+      savedRooms.push({ name, color, points: [...drawingPoints] });
+      drawingPoints = [];
+      $('roomNameInput').value = '';
+      renderRoomList();
+      renderRoomSvg();
+      $('roomSaveBtn').style.display = '';
+    });
+
+    // Suppress panning when in drawing mode
+    const _origMousedown = demoCanvas.onmousedown;
+    demoCanvas.addEventListener('mousedown', (e) => {
+      if (isDrawingRoom && e.button === 0) {
+        e.stopImmediatePropagation();
+      }
+    }, true);
+
+    $('roomUndoPoint').addEventListener('click', () => {
+      drawingPoints.pop();
+      renderRoomSvg();
+    });
+
+    $('roomCancelDraw').addEventListener('click', () => {
+      drawingPoints = [];
+      renderRoomSvg();
+    });
+
+    // Save rooms to server
+    $('roomSaveBtn').addEventListener('click', async () => {
+      if (demoPlans.length === 0) return;
+      const planId = demoPlans[demoIndex].id;
+      const btn = $('roomSaveBtn');
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/demo/rooms/${planId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(savedRooms),
+        });
+        if (!res.ok) throw new Error('Save failed');
+        btn.textContent = 'Saved!';
+        setTimeout(() => { btn.textContent = 'Save All Rooms'; btn.disabled = false; }, 1500);
+      } catch (err) {
+        btn.textContent = 'Error — retry';
+        btn.disabled = false;
+      }
+    });
+
+    // Load rooms when switching plans
+    async function loadRooms() {
+      // Clear immediately so stale rooms don't render on the new plan
+      savedRooms = [];
+      drawingPoints = [];
+      renderRoomList();
+      renderRoomSvg();
+      if (demoPlans.length === 0) return;
+      const planId = demoPlans[demoIndex].id;
+      try {
+        const res = await fetch(`/api/demo/rooms/${planId}`);
+        savedRooms = await res.json();
+      } catch { savedRooms = []; }
+      renderRoomList();
+      renderRoomSvg();
+      $('roomSaveBtn').style.display = savedRooms.length > 0 ? '' : 'none';
+    }
+
+    // Patch loadDemoPlan to also load rooms
+    const _origLoadDemoPlan = loadDemoPlan;
+    loadDemoPlan = function() {
+      _origLoadDemoPlan();
+      loadRooms();
+    };
+
+    // Re-render SVG after image loads (to get correct dimensions)
+    demoImage.addEventListener('load', () => {
+      renderRoomSvg();
+    });
 
     // Refresh history after each completed pipeline run
     const _origShowResults = showResults;

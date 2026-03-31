@@ -16,8 +16,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import fitz
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # ---------------------------------------------------------------------------
@@ -426,6 +426,7 @@ DEMO_PLANS = [
         "id": "main_st_ex",
         "name": "Main St (Existing Conditions)",
         "overlay": "output/main_st_ex/step5/candidate_1_wall_overlay.png",
+        "walls_json": "output/main_st_ex/step5/candidate_1_walls.json",
         "pdf": "example_plans/main_st_ex.pdf",
         "candidate": 1,
         "notes": "Polygon-based walls — clean passthrough",
@@ -434,6 +435,7 @@ DEMO_PLANS = [
         "id": "fmoc",
         "name": "FMOC_A — 50% CD",
         "overlay": "output/2026.01.29_-_FMOC_A_-_50%_CD_copy/step5_fixed3/candidate_1_wall_overlay.png",
+        "walls_json": "output/2026.01.29_-_FMOC_A_-_50%_CD_copy/step5_fixed3/candidate_1_walls.json",
         "pdf": "example_plans/2026.01.29 - FMOC_A - 50% CD copy.pdf",
         "candidate": 1,
         "notes": "Line-based walls — 4 styles, tight thickness filter",
@@ -469,7 +471,7 @@ async def get_demo_overlay(plan_id: str):
 
 @app.get("/api/demo/original/{plan_id}")
 async def get_demo_original(plan_id: str):
-    """Render page 1 of the original PDF as PNG for comparison."""
+    """Render page 1 of the original PDF as PNG, cropped to match the overlay."""
     for plan in DEMO_PLANS:
         if plan["id"] == plan_id:
             pdf_path = Path(plan["pdf"])
@@ -477,11 +479,53 @@ async def get_demo_original(plan_id: str):
                 raise HTTPException(404, f"PDF not found for {plan_id}")
             doc = fitz.open(str(pdf_path))
             page = doc[0]
-            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            # Crop to same bounding box as overlay (with 30pt padding)
+            clip = None
+            walls_path = Path(plan.get("walls_json", ""))
+            if walls_path.exists():
+                wdata = json.loads(walls_path.read_text())
+                bb = wdata.get("bounding_box")
+                if bb:
+                    padding = 30.0
+                    clip = fitz.Rect(
+                        bb[0] - padding, bb[1] - padding,
+                        bb[2] + padding, bb[3] + padding,
+                    ) & page.rect
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=clip, alpha=False)
             png = pix.tobytes("png")
             doc.close()
             return StreamingResponse(
                 iter([png]), media_type="image/png",
-                headers={"Cache-Control": "public, max-age=3600"},
+                headers={"Cache-Control": "no-cache"},
             )
     raise HTTPException(404, f"Unknown plan: {plan_id}")
+
+
+# ---------------------------------------------------------------------------
+# Room overlay data — JSON storage per demo plan
+# ---------------------------------------------------------------------------
+ROOM_DATA_DIR = Path("room_data")
+ROOM_DATA_DIR.mkdir(exist_ok=True)
+
+
+def _room_file(plan_id: str) -> Path:
+    return ROOM_DATA_DIR / f"{plan_id}_rooms.json"
+
+
+@app.get("/api/demo/rooms/{plan_id}")
+async def get_demo_rooms(plan_id: str):
+    """Return saved room polygons for a demo plan."""
+    path = _room_file(plan_id)
+    if path.exists():
+        return JSONResponse(json.loads(path.read_text()))
+    return JSONResponse([])
+
+
+@app.post("/api/demo/rooms/{plan_id}")
+async def save_demo_rooms(plan_id: str, request: Request):
+    """Save room polygons for a demo plan."""
+    if not any(p["id"] == plan_id for p in DEMO_PLANS):
+        raise HTTPException(404, f"Unknown plan: {plan_id}")
+    data = await request.json()
+    _room_file(plan_id).write_text(json.dumps(data, indent=2))
+    return {"status": "ok", "count": len(data)}
