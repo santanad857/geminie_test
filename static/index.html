@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cantena - Wall Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ================================================================
+       DESIGN SYSTEM
+       ================================================================ */
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-card: #16161f;
+      --bg-elevated: #1c1c28;
+      --bg-hover: #22222f;
+
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --border-default: rgba(255, 255, 255, 0.1);
+      --border-focus: rgba(20, 184, 166, 0.5);
+
+      --text-primary: #f0f0f5;
+      --text-secondary: #8a8a9a;
+      --text-tertiary: #5a5a6a;
+
+      --accent: #14b8a6;
+      --accent-hover: #2dd4bf;
+      --accent-soft: rgba(20, 184, 166, 0.12);
+      --accent-glow: rgba(20, 184, 166, 0.25);
+
+      --success: #22c55e;
+      --success-soft: rgba(34, 197, 94, 0.12);
+      --error: #ef4444;
+      --error-soft: rgba(239, 68, 68, 0.12);
+      --warning: #f59e0b;
+
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+      --shadow-glow: 0 0 40px rgba(20, 184, 166, 0.15);
+
+      --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    }
+
+    /* ================================================================
+       RESET & BASE
+       ================================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ================================================================
+       LAYOUT
+       ================================================================ */
+    .app {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 32px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-secondary);
+      backdrop-filter: blur(20px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      background: var(--accent);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: white;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-text {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .logo-divider {
+      width: 1px;
+      height: 20px;
+      background: var(--border-default);
+      margin: 0 4px;
+    }
+
+    .logo-subtitle {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-status {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+    }
+
+    /* ================================================================
+       VIEWS — shared wrapper
+       ================================================================ */
+    .view {
+      display: none;
+      width: 100%;
+      max-width: 960px;
+      animation: fadeIn var(--transition-slow) ease;
+    }
+
+    .view.active { display: block; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes successPulse {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
+      70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    .pipeline-step.just-completed .step-indicator {
+      animation: successPulse 0.6s ease;
+    }
+
+    /* ================================================================
+       UPLOAD VIEW
+       ================================================================ */
+    .upload-view {
+      text-align: center;
+    }
+
+    .upload-heading {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    .upload-subheading {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 40px;
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--border-default);
+      border-radius: var(--radius-xl);
+      padding: 64px 48px;
+      cursor: pointer;
+      transition: all var(--transition-base);
+      background: var(--bg-card);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .drop-zone::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, var(--accent-soft), transparent 70%);
+      opacity: 0;
+      transition: opacity var(--transition-base);
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--bg-elevated);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .drop-zone:hover::before,
+    .drop-zone.drag-over::before {
+      opacity: 1;
+    }
+
+    .drop-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 20px;
+      border-radius: var(--radius-md);
+      background: var(--accent-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .drop-icon svg {
+      width: 28px;
+      height: 28px;
+      color: var(--accent);
+    }
+
+    .drop-zone:hover .drop-icon svg {
+      animation: floatUp 1.5s ease-in-out infinite;
+    }
+
+    @keyframes floatUp {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    .drop-label {
+      font-size: 16px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      position: relative;
+    }
+
+    .drop-label span {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .drop-hint {
+      font-size: 13px;
+      color: var(--text-tertiary);
+      position: relative;
+    }
+
+    .drop-zone input[type="file"] {
+      display: none;
+    }
+
+    /* File selected state */
+    .file-info {
+      display: none;
+      margin-top: 24px;
+      padding: 16px 20px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      text-align: left;
+    }
+
+    .file-info.visible { display: flex; align-items: center; gap: 14px; }
+
+    .file-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-sm);
+      background: var(--accent-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .file-icon svg {
+      width: 20px;
+      height: 20px;
+      color: var(--accent);
+    }
+
+    .file-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-name {
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-meta {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    .file-remove {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+    }
+
+    .file-remove:hover {
+      background: var(--error-soft);
+      color: var(--error);
+    }
+
+    /* Run button */
+    .run-btn {
+      display: none;
+      margin: 28px auto 0;
+      padding: 14px 36px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      letter-spacing: -0.2px;
+    }
+
+    .run-btn.visible { display: inline-flex; align-items: center; gap: 8px; }
+
+    .run-btn:hover {
+      background: var(--accent-hover);
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-1px);
+    }
+
+    .run-btn:active { transform: translateY(0); }
+
+    .run-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .run-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* ================================================================
+       PROCESSING VIEW
+       ================================================================ */
+    .processing-view {
+      max-width: 560px;
+      margin: 0 auto;
+    }
+
+    .processing-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .processing-title {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      margin-bottom: 6px;
+    }
+
+    .processing-filename {
+      font-size: 14px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+
+    /* Progress bar */
+    .progress-bar-container {
+      width: 100%;
+      height: 3px;
+      background: var(--bg-card);
+      border-radius: 2px;
+      margin-bottom: 28px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+      border-radius: 2px;
+      transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 0%;
+      position: relative;
+    }
+
+    .progress-bar-fill::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 60px;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0% { opacity: 0; }
+      50% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    .processing-timer {
+      font-size: 13px;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+      margin-top: 8px;
+    }
+
+    /* Pipeline steps */
+    .pipeline-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .pipeline-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      transition: all var(--transition-base);
+    }
+
+    .pipeline-step.active {
+      background: var(--bg-elevated);
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(20, 184, 166, 0.08);
+    }
+
+    .pipeline-step.completed {
+      border-color: rgba(34, 197, 94, 0.15);
+      background: rgba(34, 197, 94, 0.03);
+    }
+
+    .pipeline-step.error {
+      border-color: rgba(239, 68, 68, 0.3);
+      background: var(--error-soft);
+    }
+
+    .step-indicator {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 600;
+      border: 2px solid var(--border-default);
+      color: var(--text-tertiary);
+      transition: all var(--transition-base);
+      margin-top: 1px;
+    }
+
+    .pipeline-step.active .step-indicator {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .pipeline-step.completed .step-indicator {
+      border-color: var(--success);
+      background: var(--success);
+      color: white;
+    }
+
+    .pipeline-step.error .step-indicator {
+      border-color: var(--error);
+      background: var(--error);
+      color: white;
+    }
+
+    .step-content { flex: 1; min-width: 0; }
+
+    .step-label {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+
+    .step-detail {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+      transition: color var(--transition-fast);
+    }
+
+    .pipeline-step.active .step-detail { color: var(--text-secondary); }
+
+    /* Spinner */
+    .spinner {
+      display: none;
+      width: 28px;
+      height: 28px;
+      border: 2.5px solid var(--border-default);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .pipeline-step.active .spinner { display: block; }
+    .pipeline-step.active .step-indicator { display: none; }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ================================================================
+       RESULTS VIEW
+       ================================================================ */
+    .results-view {
+      max-width: 1200px;
+    }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .results-title {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .results-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn-secondary {
+      padding: 10px 18px;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-focus);
+    }
+
+    .btn-secondary svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      transition: border-color var(--transition-fast);
+    }
+
+    .stat-card:hover {
+      border-color: var(--border-default);
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      font-variant-numeric: tabular-nums;
+      background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 500;
+    }
+
+    /* Image viewer */
+    .viewer-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+
+    .viewer-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+    }
+
+    .viewer-tabs {
+      display: flex;
+      gap: 2px;
+      background: var(--bg-primary);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+    }
+
+    .viewer-tab {
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all var(--transition-fast);
+    }
+
+    .viewer-tab.active {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .viewer-tab:hover:not(.active) {
+      color: var(--text-primary);
+    }
+
+    .viewer-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .viewer-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+    }
+
+    .viewer-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .viewer-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .zoom-label {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+      min-width: 44px;
+      text-align: center;
+    }
+
+    .viewer-canvas {
+      position: relative;
+      height: 600px;
+      overflow: hidden;
+      cursor: grab;
+      background:
+        linear-gradient(45deg, #0e0e16 25%, transparent 25%),
+        linear-gradient(-45deg, #0e0e16 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #0e0e16 75%),
+        linear-gradient(-45deg, transparent 75%, #0e0e16 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+      background-color: #111119;
+    }
+
+    .viewer-canvas:active { cursor: grabbing; }
+
+    .viewer-canvas img {
+      position: absolute;
+      transform-origin: 0 0;
+      user-select: none;
+      -webkit-user-drag: none;
+      image-rendering: auto;
+    }
+
+    /* Opacity slider for overlay */
+    .overlay-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      border-left: 1px solid var(--border-subtle);
+      margin-left: 4px;
+    }
+
+    .overlay-label {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      white-space: nowrap;
+    }
+
+    .opacity-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 80px;
+      height: 4px;
+      background: var(--bg-primary);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .opacity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--bg-elevated);
+    }
+
+    /* ================================================================
+       AMBIENT EFFECTS
+       ================================================================ */
+    .app::before {
+      content: '';
+      position: fixed;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(ellipse at 30% 20%, rgba(20, 184, 166, 0.04) 0%, transparent 50%),
+                  radial-gradient(ellipse at 70% 80%, rgba(20, 184, 166, 0.03) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header, main { position: relative; z-index: 1; }
+
+    /* ================================================================
+       HISTORY PANEL
+       ================================================================ */
+    .history-toggle {
+      padding: 8px 14px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-sans);
+    }
+
+    .history-toggle:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .history-toggle svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .history-toggle .history-count {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 10px;
+      min-width: 20px;
+      text-align: center;
+    }
+
+    .history-panel {
+      display: none;
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 340px;
+      height: 100vh;
+      background: var(--bg-secondary);
+      border-left: 1px solid var(--border-subtle);
+      z-index: 200;
+      flex-direction: column;
+      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+      animation: slideIn var(--transition-base) ease;
+    }
+
+    .history-panel.open { display: flex; }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to   { transform: translateX(0); opacity: 1; }
+    }
+
+    .history-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+    }
+
+    .history-panel-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .history-close {
+      width: 30px;
+      height: 30px;
+      border: none;
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+    }
+
+    .history-close:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .history-list::-webkit-scrollbar { width: 4px; }
+    .history-list::-webkit-scrollbar-track { background: transparent; }
+    .history-list::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+
+    .history-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-tertiary);
+      font-size: 13px;
+    }
+
+    .history-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      border: 1px solid transparent;
+      margin-bottom: 4px;
+    }
+
+    .history-item:hover {
+      background: var(--bg-elevated);
+      border-color: var(--border-subtle);
+    }
+
+    .history-item.active {
+      background: var(--bg-elevated);
+      border-color: var(--accent);
+    }
+
+    .history-thumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 6px;
+      background: var(--bg-card);
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .history-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .history-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .history-item-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 3px;
+    }
+
+    .history-item-meta {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      font-family: var(--font-mono);
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .history-item-delete {
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: transparent;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: all var(--transition-fast);
+      flex-shrink: 0;
+      align-self: center;
+    }
+
+    .history-item:hover .history-item-delete { opacity: 1; }
+    .history-item-delete:hover {
+      background: var(--error-soft);
+      color: var(--error);
+    }
+
+    /* Adjust main when history panel is open */
+    body.history-open main {
+      margin-right: 340px;
+      transition: margin-right var(--transition-base);
+    }
+
+    /* ================================================================
+       SVG ICONS (inline)
+       ================================================================ */
+    .icon-check { display: none; }
+    .pipeline-step.completed .icon-check { display: block; }
+    .pipeline-step.completed .step-number { display: none; }
+
+    .icon-x { display: none; }
+    .pipeline-step.error .icon-x { display: block; }
+    .pipeline-step.error .step-number { display: none; }
+
+    /* ================================================================
+       RESPONSIVE
+       ================================================================ */
+    @media (max-width: 768px) {
+      header { padding: 12px 16px; }
+      main { padding: 16px; }
+      .upload-heading { font-size: 22px; }
+      .drop-zone { padding: 40px 24px; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .viewer-canvas { height: 400px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- ============================================================
+         HEADER
+         ============================================================ -->
+    <header>
+      <div class="logo">
+        <div class="logo-text">Cantena</div>
+        <div class="logo-divider"></div>
+        <div class="logo-subtitle">Wall Detection</div>
+      </div>
+      <div class="header-right">
+        <div class="header-status" id="headerStatus"></div>
+        <button class="history-toggle" id="historyToggle" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          History
+          <span class="history-count" id="historyCount">0</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- HISTORY PANEL -->
+    <div class="history-panel" id="historyPanel">
+      <div class="history-panel-header">
+        <div class="history-panel-title">Previous Analyses</div>
+        <button class="history-close" id="historyClose">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty">No previous analyses</div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         MAIN CONTENT
+         ============================================================ -->
+    <main>
+
+      <!-- UPLOAD VIEW -->
+      <div class="view upload-view active" id="uploadView">
+        <h1 class="upload-heading">Analyze Floor Plan</h1>
+        <p class="upload-subheading">Upload an architectural PDF to detect and extract wall geometries</p>
+
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <div class="drop-label">Drop your PDF here or <span>browse files</span></div>
+          <div class="drop-hint">Supports architectural floor plan PDFs</div>
+          <input type="file" id="fileInput" accept=".pdf">
+        </div>
+
+        <div class="file-info" id="fileInfo">
+          <div class="file-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+          </div>
+          <div class="file-details">
+            <div class="file-name" id="fileName"></div>
+            <div class="file-meta" id="fileMeta"></div>
+          </div>
+          <button class="file-remove" id="fileRemove" title="Remove file">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <button class="run-btn" id="runBtn" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Run Wall Detection
+        </button>
+      </div>
+
+      <!-- PROCESSING VIEW -->
+      <div class="view processing-view" id="processingView">
+        <div class="processing-header">
+          <h2 class="processing-title">Analyzing Floor Plan</h2>
+          <div class="processing-filename" id="processingFilename"></div>
+          <div class="processing-timer" id="processingTimer"></div>
+        </div>
+
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+
+        <div class="pipeline-steps" id="pipelineSteps">
+          <div class="pipeline-step" data-step="1">
+            <div class="spinner"></div>
+            <div class="step-indicator">
+              <span class="step-number">1</span>
+              <svg class="icon-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg class="icon-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <div class="step-content">
+              <div class="step-label">Loading PDF</div>
+              <div class="step-detail">Waiting...</div>
+            </div>
+          </div>
+
+          <div class="pipeline-step" data-step="2">
+            <div class="spinner"></div>
+            <div class="step-indicator">
+              <span class="step-number">2</span>
+              <svg class="icon-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg class="icon-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <div class="step-content">
+              <div class="step-label">Wall Analysis</div>
+              <div class="step-detail">Waiting...</div>
+            </div>
+          </div>
+
+          <div class="pipeline-step" data-step="3">
+            <div class="spinner"></div>
+            <div class="step-indicator">
+              <span class="step-number">3</span>
+              <svg class="icon-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg class="icon-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <div class="step-content">
+              <div class="step-label">Extracting Wall Pattern</div>
+              <div class="step-detail">Waiting...</div>
+            </div>
+          </div>
+
+          <div class="pipeline-step" data-step="4">
+            <div class="spinner"></div>
+            <div class="step-indicator">
+              <span class="step-number">4</span>
+              <svg class="icon-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg class="icon-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <div class="step-content">
+              <div class="step-label">Detecting All Walls</div>
+              <div class="step-detail">Waiting...</div>
+            </div>
+          </div>
+
+          <div class="pipeline-step" data-step="5">
+            <div class="spinner"></div>
+            <div class="step-indicator">
+              <span class="step-number">5</span>
+              <svg class="icon-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg class="icon-x" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <div class="step-content">
+              <div class="step-label">Generating Overlay</div>
+              <div class="step-detail">Waiting...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESULTS VIEW -->
+      <div class="view results-view" id="resultsView">
+        <div class="results-header">
+          <h2 class="results-title">Wall Detection Results</h2>
+          <div class="results-actions">
+            <button class="btn-secondary" id="downloadBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Download Overlay
+            </button>
+            <button class="btn-secondary" id="newAnalysisBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"/>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+              </svg>
+              New Analysis
+            </button>
+          </div>
+        </div>
+
+        <div class="stats-bar" id="statsBar">
+          <!-- Filled dynamically -->
+        </div>
+
+        <div class="viewer-container">
+          <div class="viewer-toolbar">
+            <div class="viewer-tabs">
+              <button class="viewer-tab active" data-view="overlay">Overlay</button>
+              <button class="viewer-tab" data-view="original">Original</button>
+            </div>
+
+            <div class="viewer-controls">
+              <div class="overlay-controls" id="overlayControls">
+                <span class="overlay-label">Overlay</span>
+                <input type="range" class="opacity-slider" id="opacitySlider" min="0" max="100" value="100">
+              </div>
+
+              <button class="viewer-btn" id="zoomOut" title="Zoom out">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <span class="zoom-label" id="zoomLabel">100%</span>
+              <button class="viewer-btn" id="zoomIn" title="Zoom in">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <button class="viewer-btn" id="zoomFit" title="Fit to view">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="viewer-canvas" id="viewerCanvas">
+            <img id="overlayImage" src="" alt="Wall overlay">
+            <img id="originalImage" src="" alt="Original floor plan" style="display:none">
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ================================================================
+       JAVASCRIPT
+       ================================================================ -->
+  <script>
+    // ---------------------------------------------------------------
+    // State
+    // ---------------------------------------------------------------
+    const state = {
+      jobId: null,
+      filename: null,
+      file: null,
+      currentView: 'overlay',
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      isPanning: false,
+      panStartX: 0,
+      panStartY: 0,
+      result: null,
+    };
+
+    // ---------------------------------------------------------------
+    // DOM refs
+    // ---------------------------------------------------------------
+    const $ = id => document.getElementById(id);
+
+    const uploadView = $('uploadView');
+    const processingView = $('processingView');
+    const resultsView = $('resultsView');
+    const dropZone = $('dropZone');
+    const fileInput = $('fileInput');
+    const fileInfo = $('fileInfo');
+    const fileName = $('fileName');
+    const fileMeta = $('fileMeta');
+    const fileRemove = $('fileRemove');
+    const runBtn = $('runBtn');
+    const processingFilename = $('processingFilename');
+    const pipelineSteps = $('pipelineSteps');
+    const statsBar = $('statsBar');
+    const viewerCanvas = $('viewerCanvas');
+    const overlayImage = $('overlayImage');
+    const originalImage = $('originalImage');
+    const zoomLabel = $('zoomLabel');
+    const opacitySlider = $('opacitySlider');
+    const overlayControls = $('overlayControls');
+    const headerStatus = $('headerStatus');
+
+    // ---------------------------------------------------------------
+    // View transitions
+    // ---------------------------------------------------------------
+    function showView(viewEl) {
+      [uploadView, processingView, resultsView].forEach(v => v.classList.remove('active'));
+      viewEl.classList.add('active');
+    }
+
+    // ---------------------------------------------------------------
+    // Upload / Drop
+    // ---------------------------------------------------------------
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (files.length && files[0].name.toLowerCase().endsWith('.pdf')) {
+        selectFile(files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) selectFile(fileInput.files[0]);
+    });
+
+    function selectFile(file) {
+      state.file = file;
+      fileName.textContent = file.name;
+      const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+      fileMeta.textContent = `${sizeMB} MB`;
+      fileInfo.classList.add('visible');
+      runBtn.classList.add('visible');
+      runBtn.disabled = false;
+    }
+
+    fileRemove.addEventListener('click', () => {
+      state.file = null;
+      fileInput.value = '';
+      fileInfo.classList.remove('visible');
+      runBtn.classList.remove('visible');
+    });
+
+    // ---------------------------------------------------------------
+    // Run pipeline
+    // ---------------------------------------------------------------
+    runBtn.addEventListener('click', async () => {
+      if (!state.file) return;
+      runBtn.disabled = true;
+
+      // Upload
+      const formData = new FormData();
+      formData.append('file', state.file);
+
+      try {
+        const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
+        if (!uploadRes.ok) throw new Error('Upload failed');
+        const uploadData = await uploadRes.json();
+        state.jobId = uploadData.job_id;
+        state.filename = uploadData.filename;
+
+        // Switch to processing view
+        processingFilename.textContent = state.filename;
+        resetPipelineSteps();
+        showView(processingView);
+
+        // Page info
+        const info = uploadData.page_info;
+        fileMeta.textContent += ` | ${info.drawings} vectors`;
+
+        // Start processing
+        const procRes = await fetch(`/api/process/${state.jobId}`, { method: 'POST' });
+        if (!procRes.ok) throw new Error('Processing failed to start');
+
+        // Listen to SSE progress
+        listenProgress(state.jobId);
+      } catch (err) {
+        console.error(err);
+        runBtn.disabled = false;
+        headerStatus.textContent = 'Error: ' + err.message;
+      }
+    });
+
+    let timerInterval = null;
+    let timerStart = 0;
+
+    function resetPipelineSteps() {
+      document.querySelectorAll('.pipeline-step').forEach(step => {
+        step.classList.remove('active', 'completed', 'error');
+        step.querySelector('.step-detail').textContent = 'Waiting...';
+      });
+      $('progressBarFill').style.width = '0%';
+
+      // Start timer
+      timerStart = Date.now();
+      $('processingTimer').textContent = '0s elapsed';
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - timerStart) / 1000);
+        const min = Math.floor(elapsed / 60);
+        const sec = elapsed % 60;
+        $('processingTimer').textContent = min > 0
+          ? `${min}m ${sec.toString().padStart(2, '0')}s elapsed`
+          : `${sec}s elapsed`;
+      }, 1000);
+    }
+
+    function listenProgress(jobId) {
+      const source = new EventSource(`/api/progress/${jobId}`);
+      let lastStep = 0;
+
+      source.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const stepNum = data.step;
+        const label = data.label;
+        const detail = data.detail;
+
+        // Update progress bar
+        if (stepNum > 0) {
+          const pct = Math.min((stepNum / 5) * 100, 100);
+          $('progressBarFill').style.width = pct + '%';
+        }
+
+        // Mark previous steps as completed
+        if (stepNum > 0) {
+          for (let i = 1; i < stepNum; i++) {
+            const el = document.querySelector(`.pipeline-step[data-step="${i}"]`);
+            if (el && !el.classList.contains('completed')) {
+              el.classList.remove('active');
+              el.classList.add('completed');
+            }
+          }
+
+          // Current step active
+          const currentEl = document.querySelector(`.pipeline-step[data-step="${stepNum}"]`);
+          if (currentEl) {
+            currentEl.classList.add('active');
+            currentEl.querySelector('.step-detail').textContent = detail || label;
+          }
+        }
+
+        // Error step
+        if (stepNum === 0 && label === 'Error') {
+          const allSteps = document.querySelectorAll('.pipeline-step');
+          allSteps.forEach(s => {
+            if (s.classList.contains('active')) {
+              s.classList.remove('active');
+              s.classList.add('error');
+              s.querySelector('.step-detail').textContent = detail;
+            }
+          });
+        }
+
+        lastStep = stepNum;
+      };
+
+      source.addEventListener('done', (event) => {
+        source.close();
+        const data = JSON.parse(event.data);
+
+        if (data.status === 'completed') {
+          // Mark last step as completed
+          document.querySelectorAll('.pipeline-step').forEach(s => {
+            s.classList.remove('active');
+            s.classList.add('completed');
+          });
+          $('progressBarFill').style.width = '100%';
+          if (timerInterval) clearInterval(timerInterval);
+
+          state.result = data.result;
+
+          // Short delay for visual satisfaction
+          setTimeout(() => showResults(jobId, data.result), 600);
+        } else {
+          // Error
+          if (timerInterval) clearInterval(timerInterval);
+          headerStatus.textContent = 'Pipeline error: ' + (data.error || 'Unknown');
+        }
+      });
+
+      source.onerror = () => {
+        source.close();
+        // Poll status as fallback
+        setTimeout(async () => {
+          const res = await fetch(`/api/status/${jobId}`);
+          const data = await res.json();
+          if (data.status === 'completed') {
+            state.result = data.result;
+            showResults(jobId, data.result);
+          }
+        }, 1000);
+      };
+    }
+
+    // ---------------------------------------------------------------
+    // Results
+    // ---------------------------------------------------------------
+    function showResults(jobId, result) {
+      // Stats
+      statsBar.innerHTML = '';
+      const stats = [
+        { value: result.total_wall_drawings, label: 'Wall Elements' },
+        { value: result.edge_segments, label: 'Edge Segments' },
+        { value: result.hatch_drawings + result.fill_drawings, label: 'Fills & Hatches' },
+        { value: result.coverage_pct + '%', label: 'Vector Coverage' },
+        { value: result.wall_style.replace(/_/g, ' '), label: 'Detection Style' },
+      ];
+
+      stats.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'stat-card';
+        card.innerHTML = `
+          <div class="stat-value">${s.value}</div>
+          <div class="stat-label">${s.label}</div>
+        `;
+        statsBar.appendChild(card);
+      });
+
+      // Load images
+      overlayImage.src = `/api/files/${jobId}/wall_overlay.png`;
+      originalImage.src = `/api/files/${jobId}/original.png`;
+
+      overlayImage.onload = () => {
+        fitToView();
+      };
+
+      showView(resultsView);
+      headerStatus.textContent = '';
+
+      // Set default tab
+      setViewerTab('overlay');
+    }
+
+    // ---------------------------------------------------------------
+    // Image viewer — zoom & pan
+    // ---------------------------------------------------------------
+    function updateTransform() {
+      const transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+      overlayImage.style.transform = transform;
+      originalImage.style.transform = transform;
+      zoomLabel.textContent = Math.round(state.zoom * 100) + '%';
+    }
+
+    function fitToView() {
+      const canvas = viewerCanvas.getBoundingClientRect();
+      const img = overlayImage;
+      if (!img.naturalWidth) return;
+
+      const scaleX = (canvas.width - 40) / img.naturalWidth;
+      const scaleY = (canvas.height - 40) / img.naturalHeight;
+      state.zoom = Math.min(scaleX, scaleY, 1);
+
+      state.panX = (canvas.width - img.naturalWidth * state.zoom) / 2;
+      state.panY = (canvas.height - img.naturalHeight * state.zoom) / 2;
+
+      updateTransform();
+    }
+
+    $('zoomIn').addEventListener('click', () => {
+      const canvas = viewerCanvas.getBoundingClientRect();
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      zoomAt(cx, cy, state.zoom * 1.25);
+    });
+
+    $('zoomOut').addEventListener('click', () => {
+      const canvas = viewerCanvas.getBoundingClientRect();
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      zoomAt(cx, cy, state.zoom / 1.25);
+    });
+
+    $('zoomFit').addEventListener('click', fitToView);
+
+    function zoomAt(cx, cy, newZoom) {
+      newZoom = Math.max(0.1, Math.min(newZoom, 10));
+      const ratio = newZoom / state.zoom;
+      state.panX = cx - ratio * (cx - state.panX);
+      state.panY = cy - ratio * (cy - state.panY);
+      state.zoom = newZoom;
+      updateTransform();
+    }
+
+    // Mouse wheel zoom
+    viewerCanvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = viewerCanvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      zoomAt(cx, cy, state.zoom * factor);
+    }, { passive: false });
+
+    // Pan
+    viewerCanvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      state.isPanning = true;
+      state.panStartX = e.clientX - state.panX;
+      state.panStartY = e.clientY - state.panY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!state.isPanning) return;
+      state.panX = e.clientX - state.panStartX;
+      state.panY = e.clientY - state.panStartY;
+      updateTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      state.isPanning = false;
+    });
+
+    // Viewer tabs
+    document.querySelectorAll('.viewer-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        setViewerTab(tab.dataset.view);
+      });
+    });
+
+    function setViewerTab(view) {
+      state.currentView = view;
+      document.querySelectorAll('.viewer-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector(`.viewer-tab[data-view="${view}"]`).classList.add('active');
+
+      if (view === 'overlay') {
+        overlayImage.style.display = '';
+        originalImage.style.display = 'none';
+        overlayControls.style.display = '';
+      } else {
+        overlayImage.style.display = 'none';
+        originalImage.style.display = '';
+        overlayControls.style.display = 'none';
+      }
+    }
+
+    // Opacity slider
+    opacitySlider.addEventListener('input', () => {
+      overlayImage.style.opacity = opacitySlider.value / 100;
+    });
+
+    // Download
+    $('downloadBtn').addEventListener('click', () => {
+      if (!state.jobId) return;
+      const a = document.createElement('a');
+      a.href = `/api/files/${state.jobId}/wall_overlay.png`;
+      a.download = `wall_overlay_${state.filename || 'result'}.png`;
+      a.click();
+    });
+
+    // New analysis
+    $('newAnalysisBtn').addEventListener('click', () => {
+      state.jobId = null;
+      state.file = null;
+      state.result = null;
+      fileInput.value = '';
+      fileInfo.classList.remove('visible');
+      runBtn.classList.remove('visible');
+      runBtn.disabled = true;
+      headerStatus.textContent = '';
+      showView(uploadView);
+    });
+
+    // ---------------------------------------------------------------
+    // Touch support for pan
+    // ---------------------------------------------------------------
+    let touchStartX, touchStartY;
+
+    viewerCanvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        state.isPanning = true;
+        touchStartX = e.touches[0].clientX - state.panX;
+        touchStartY = e.touches[0].clientY - state.panY;
+      }
+    }, { passive: true });
+
+    viewerCanvas.addEventListener('touchmove', (e) => {
+      if (!state.isPanning || e.touches.length !== 1) return;
+      e.preventDefault();
+      state.panX = e.touches[0].clientX - touchStartX;
+      state.panY = e.touches[0].clientY - touchStartY;
+      updateTransform();
+    }, { passive: false });
+
+    viewerCanvas.addEventListener('touchend', () => {
+      state.isPanning = false;
+    });
+
+    // ---------------------------------------------------------------
+    // History
+    // ---------------------------------------------------------------
+    const historyToggle = $('historyToggle');
+    const historyPanel = $('historyPanel');
+    const historyList = $('historyList');
+    const historyClose = $('historyClose');
+    const historyCount = $('historyCount');
+
+    let historyData = [];
+
+    historyToggle.addEventListener('click', () => {
+      historyPanel.classList.toggle('open');
+      document.body.classList.toggle('history-open');
+    });
+
+    historyClose.addEventListener('click', () => {
+      historyPanel.classList.remove('open');
+      document.body.classList.remove('history-open');
+    });
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/history');
+        historyData = await res.json();
+        renderHistory();
+      } catch (e) {
+        console.error('Failed to load history', e);
+      }
+    }
+
+    function renderHistory() {
+      const count = historyData.length;
+      historyCount.textContent = count;
+      historyToggle.style.display = count > 0 ? '' : 'none';
+
+      if (count === 0) {
+        historyList.innerHTML = '<div class="history-empty">No previous analyses</div>';
+        return;
+      }
+
+      historyList.innerHTML = '';
+      historyData.forEach(job => {
+        const item = document.createElement('div');
+        item.className = 'history-item' + (job.id === state.jobId ? ' active' : '');
+        const date = job.created_at ? new Date(job.created_at * 1000) : null;
+        const dateStr = date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+        const wallCount = job.result ? job.result.total_wall_drawings : '—';
+        const style = job.result ? job.result.wall_style.replace(/_/g, ' ') : '';
+
+        item.innerHTML = `
+          <div class="history-thumb">
+            <img src="/api/files/${job.id}/preview.png" alt="" loading="lazy">
+          </div>
+          <div class="history-item-info">
+            <div class="history-item-name">${job.filename}</div>
+            <div class="history-item-meta">
+              <span>${wallCount} walls &middot; ${style}</span>
+              <span>${dateStr}</span>
+            </div>
+          </div>
+          <button class="history-item-delete" title="Remove">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        `;
+
+        // Click to view
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('.history-item-delete')) return;
+          viewHistoryItem(job);
+        });
+
+        // Delete
+        item.querySelector('.history-item-delete').addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await fetch(`/api/history/${job.id}`, { method: 'DELETE' });
+          historyData = historyData.filter(j => j.id !== job.id);
+          renderHistory();
+          // If viewing this item, go back to upload
+          if (state.jobId === job.id) {
+            $('newAnalysisBtn').click();
+          }
+        });
+
+        historyList.appendChild(item);
+      });
+    }
+
+    function viewHistoryItem(job) {
+      state.jobId = job.id;
+      state.filename = job.filename;
+      state.result = job.result;
+      showResults(job.id, job.result);
+
+      // Highlight active
+      document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
+      // Find and mark the active one
+      const items = historyList.querySelectorAll('.history-item');
+      items.forEach(el => {
+        if (el.querySelector('.history-item-name').textContent === job.filename) {
+          el.classList.add('active');
+        }
+      });
+    }
+
+    // Load history on page load
+    loadHistory();
+
+    // Refresh history after each completed pipeline run
+    const _origShowResults = showResults;
+    // Patch showResults to also refresh history
+    const origShowResults = showResults;
+    showResults = function(jobId, result) {
+      origShowResults(jobId, result);
+      loadHistory();
+    };
+
+  </script>
+</body>
+</html>

@@ -7,4 +7,7 @@ scipy
 networkx
 shapely
 rtree
+fastapi
+uvicorn
+python-multipart
 
