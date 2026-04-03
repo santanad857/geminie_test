@@ -38,8 +38,9 @@ if os.path.exists(_env_path):
 
 app = FastAPI(title="Cantena Wall Detection")
 
-UPLOAD_DIR = Path("uploads")
-RESULTS_DIR = Path("results")
+_BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+UPLOAD_DIR = _BASE_DIR / "uploads"
+RESULTS_DIR = _BASE_DIR / "results"
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
 
@@ -508,7 +509,7 @@ async def get_demo_original(plan_id: str):
 # ---------------------------------------------------------------------------
 # Room overlay data — JSON storage per demo plan
 # ---------------------------------------------------------------------------
-ROOM_DATA_DIR = Path("room_data")
+ROOM_DATA_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "room_data"
 ROOM_DATA_DIR.mkdir(exist_ok=True)
 
 
