@@ -40,7 +40,7 @@ from shapely.ops import linemerge, unary_union
 # ── constants ────────────────────────────────────────────────────────
 
 _THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.normpath(os.path.join(_THIS_DIR, "..", ".."))
+PROJECT_ROOT = os.path.normpath(os.path.join(_THIS_DIR, ".."))
 
 # Hardcoded confirmed-good classification results from Step 3.
 HARDCODED_GOOD: dict[str, int] = {

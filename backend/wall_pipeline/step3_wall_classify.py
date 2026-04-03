@@ -74,7 +74,7 @@ RESULT_FAINT_RED = (1.0, 0.5, 0.5)
 BBOX_PADDING_PT = 30.0
 
 _THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.normpath(os.path.join(_THIS_DIR, "..", ".."))
+PROJECT_ROOT = os.path.normpath(os.path.join(_THIS_DIR, ".."))
 
 
 # ── rendering helpers ─────────────────────────────────────────────────

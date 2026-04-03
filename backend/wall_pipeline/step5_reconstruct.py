@@ -31,7 +31,7 @@ from shapely.geometry import Polygon
 # ── constants ────────────────────────────────────────────────────────
 
 _THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.normpath(os.path.join(_THIS_DIR, "..", ".."))
+PROJECT_ROOT = os.path.normpath(os.path.join(_THIS_DIR, ".."))
 
 HARDCODED_GOOD: dict[str, int] = {
     "2026-03-27_Test-2_v4":                2,

@@ -500,7 +500,7 @@ def run(
 
 if __name__ == "__main__":
     pdf_dir = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "example_plans"
+        os.path.dirname(os.path.abspath(__file__)), "..", "example_plans"
     )
 
     if len(sys.argv) > 1:

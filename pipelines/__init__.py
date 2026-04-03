@@ -1,1 +1,0 @@
-# Wall & Room detection pipelines

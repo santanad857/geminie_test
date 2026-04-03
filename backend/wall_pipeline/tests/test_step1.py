@@ -35,7 +35,7 @@ from step1_extract import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
-EXAMPLE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "example_plans")
+EXAMPLE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "example_plans")
 EXAMPLE_PDFS = sorted(
     os.path.join(EXAMPLE_DIR, f)
     for f in os.listdir(EXAMPLE_DIR)

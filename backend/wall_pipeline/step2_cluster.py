@@ -424,8 +424,12 @@ def run(
     candidates = cluster_candidates(primitives_dict, pt_per_inch)
 
     if output_dir is None:
-        output_dir = os.path.join(
-            os.path.dirname(patterns_json_path), "step2")
+        # patterns_json_path is like output/plan/step1/patterns.json
+        # os.path.dirname is output/plan/step1
+        # we want output/plan/step2
+        step1_dir = os.path.dirname(patterns_json_path)
+        plan_dir = os.path.dirname(step1_dir)
+        output_dir = os.path.join(plan_dir, "step2")
     os.makedirs(output_dir, exist_ok=True)
 
     with open(os.path.join(output_dir, "candidates.json"), "w") as fh:

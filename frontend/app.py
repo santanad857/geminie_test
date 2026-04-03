@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 # ---------------------------------------------------------------------------
 # Load .env from project root
 # ---------------------------------------------------------------------------
-_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
 if os.path.exists(_env_path):
     with open(_env_path) as _f:
         for _line in _f:
@@ -102,13 +102,15 @@ _load_history()
 # Serve the SPA
 # ---------------------------------------------------------------------------
 
+_FRONTEND_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @app.get("/")
 async def index():
-    return FileResponse("static/index.html", media_type="text/html")
+    return FileResponse(os.path.join(_FRONTEND_DIR, "index.html"), media_type="text/html")
 
 
 # Mount static assets
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=_FRONTEND_DIR), name="static")
 
 
 # ---------------------------------------------------------------------------
@@ -421,22 +423,24 @@ async def delete_history_item(job_id: str):
 # Demo gallery — pre-computed wall overlays
 # ---------------------------------------------------------------------------
 
+_BACKEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend")
+
 DEMO_PLANS = [
     {
         "id": "main_st_ex",
         "name": "Main St (Existing Conditions)",
-        "overlay": "output/main_st_ex/step5/candidate_1_wall_overlay.png",
-        "walls_json": "output/main_st_ex/step5/candidate_1_walls.json",
-        "pdf": "example_plans/main_st_ex.pdf",
+        "overlay": os.path.join(_BACKEND_DIR, "output/main_st_ex/step5/candidate_1_wall_overlay.png"),
+        "walls_json": os.path.join(_BACKEND_DIR, "output/main_st_ex/step5/candidate_1_walls.json"),
+        "pdf": os.path.join(_BACKEND_DIR, "example_plans/main_st_ex.pdf"),
         "candidate": 1,
         "notes": "Polygon-based walls — clean passthrough",
     },
     {
         "id": "fmoc",
         "name": "FMOC_A — 50% CD",
-        "overlay": "output/2026.01.29_-_FMOC_A_-_50%_CD_copy/step5_fixed3/candidate_1_wall_overlay.png",
-        "walls_json": "output/2026.01.29_-_FMOC_A_-_50%_CD_copy/step5_fixed3/candidate_1_walls.json",
-        "pdf": "example_plans/2026.01.29 - FMOC_A - 50% CD copy.pdf",
+        "overlay": os.path.join(_BACKEND_DIR, "output/2026.01.29_-_FMOC_A_-_50%_CD_copy/step5_fixed3/candidate_1_wall_overlay.png"),
+        "walls_json": os.path.join(_BACKEND_DIR, "output/2026.01.29_-_FMOC_A_-_50%_CD_copy/step5_fixed3/candidate_1_walls.json"),
+        "pdf": os.path.join(_BACKEND_DIR, "example_plans/2026.01.29 - FMOC_A - 50% CD copy.pdf"),
         "candidate": 1,
         "notes": "Line-based walls — 4 styles, tight thickness filter",
     },

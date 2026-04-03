@@ -34,7 +34,7 @@ from step3_wall_classify import (
 # ── paths ─────────────────────────────────────────────────────────────
 
 _TESTS_DIR   = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.normpath(os.path.join(_TESTS_DIR, "..", "..", ".."))
+PROJECT_ROOT = os.path.normpath(os.path.join(_TESTS_DIR, "..", ".."))
 
 MAIN_ST_EX_PDF        = os.path.join(PROJECT_ROOT, "example_plans", "main_st_ex.pdf")
 MAIN_ST_EX_CANDIDATES = os.path.join(
